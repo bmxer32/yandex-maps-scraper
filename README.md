@@ -14,7 +14,7 @@
 
 ---
 
-<img src="docs/screenshots/01-main.png" alt="Yandex Maps Scraper — главный экран" width="100%">
+<img src="docs/screenshots/main.jpg" alt="Yandex Maps Scraper — главный экран" width="100%">
 
 ## 📋 Возможности
 
