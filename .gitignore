@@ -55,6 +55,12 @@ backend/*.spec.bak
 .project
 .classpath
 .settings/
+*.tsbuildinfo
+
+# --- Конфиги ассистентов (приватные) ---
+AGENTS.md
+CLAUDE.md
+.opencode/
 
 # --- OS ---
 .DS_Store
