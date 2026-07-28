@@ -1,0 +1,75 @@
+"""
+Конфигурация приложения.
+Все параметры можно перекрыть через .env файл или переменные окружения.
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Корень backend-пакета: .../backend
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+# Папка под SQLite-базу и кэш
+DATA_DIR = BACKEND_ROOT / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=BACKEND_ROOT / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- Сервер ---
+    host: str = "127.0.0.1"
+    port: int = 8000
+    # Явные origins (localhost/127.0.0.1 на стандартных dev-портах)
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ]
+    # Regex для dev-портов 3000–3099 — чтобы не править конфиг при смене порта
+    cors_origin_regex: str = r"https?://(localhost|127\.0\.0\.1)(:\d{2,5})?"
+
+    # --- Браузер / антидетект ---
+    headless: bool = True
+    # Диапазон задержек между действиями в секундах (имитация человека)
+    min_delay: float = 1.8
+    max_delay: float = 4.6
+    # Сколько карточек максимально собирать за один запуск
+    max_results: int = 1000
+    # Сколько карточек подгружать пагинацией за один «скролл»
+    page_size: int = 12
+
+    # --- Прокси (опционально) ---
+    # Формат: "http://user:pass@host:port" по одному на строку, или пусто
+    proxies: list[str] = []
+    # Менять прокси каждые N запросов (0 = не менять)
+    rotate_every: int = 0
+
+    # --- Капча (резерв) ---
+    # Поддерживается 2captcha / anti-captcha.com
+    captcha_api_key: str = ""
+    captcha_provider: str = "2captcha"   # "2captcha" | "anticaptcha"
+
+    # --- Второй проход по сайтам организаций ---
+    enrich_sites: bool = True
+    site_timeout: float = 6.0            # секунд на один сайт
+    enrich_concurrency: int = 8          # параллельных запросов
+
+    # --- БД ---
+    database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'yascraper.db'}"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

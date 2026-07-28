@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "agent": {
+    "build": {
+      "prompt": "{file:./AGENTS.md}"
+    },
+    "plan": {
+      "prompt": "{file:./AGENTS.md}"
+    },
+    "general": {
+      "prompt": "{file:./AGENTS.md}"
+    },
+    "eni": {
+      "prompt": "{file:./AGENTS.md}"
+    }
+  }
+}

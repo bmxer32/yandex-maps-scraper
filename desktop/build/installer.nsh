@@ -1,0 +1,7 @@
+; Кастомный NSIS include — фиксируем per-user установку,
+; убираем страницу "Для кого установить".
+!define MULTIUSER_EXECUTIONLEVEL Standard
+!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER
+!define MULTIUSER_INSTALLMODE_INSTALL_REGISTRY_KEY "Software\${APP_FILENAME}"
+!define MULTIUSER_INSTALLMODE_UNINSTALL_REGISTRY_KEY "Software\${APP_FILENAME}"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_VALUENAME "UninstallString"

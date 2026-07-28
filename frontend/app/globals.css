@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Светлая тема */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+
+    --primary: 24 95% 53%;          /* янтарный акцент */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 10% 12%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --accent: 24 95% 96%;
+    --accent-foreground: 24 95% 30%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 24 95% 53%;
+
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    /* Тёмная тема — дефолт */
+    --background: 240 10% 4%;       /* глубокий графит */
+    --foreground: 0 0% 95%;
+
+    --card: 240 8% 7%;
+    --card-foreground: 0 0% 95%;
+
+    --primary: 32 95% 55%;          /* тёплый янтарь */
+    --primary-foreground: 240 10% 6%;
+
+    --secondary: 240 6% 12%;
+    --secondary-foreground: 0 0% 92%;
+
+    --muted: 240 6% 12%;
+    --muted-foreground: 240 5% 55%;
+
+    --accent: 32 60% 16%;
+    --accent-foreground: 32 95% 75%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 95%;
+
+    --success: 142 65% 45%;
+    --warning: 38 92% 55%;
+
+    --border: 240 6% 16%;
+    --input: 240 6% 16%;
+    --ring: 32 95% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" 32;
+  }
+  /* Кастомный скроллбар — тонкий, в палитре */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 6px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+@layer components {
+  /* Эффект «стекла» для шапок и плавающих панелей */
+  .glass {
+    @apply backdrop-blur-xl bg-card/70 border border-border/60;
+  }
+  /* Тонкое свечение для акцентных кнопок */
+  .glow-primary {
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2),
+                0 8px 24px -8px hsl(var(--primary) / 0.45);
+  }
+  /* Пульсирующая точка статуса */
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
+  }
+  .status-dot.live {
+    @apply bg-success;
+    animation: pulse-dot 1.6s ease-in-out infinite;
+  }
+  .status-dot.done {
+    @apply bg-success;
+  }
+  .status-dot.error {
+    @apply bg-destructive;
+  }
+  .status-dot.idle {
+    @apply bg-muted-foreground;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.4); }
+}
