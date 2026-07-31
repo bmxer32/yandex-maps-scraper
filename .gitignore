@@ -26,7 +26,11 @@ out/
 # --- Electron / electron-builder ---
 desktop/release/
 desktop/dist/
-desktop/resources/         # junction'ы на собранные backend/dist и frontend/out
+# junction'ы на собранные backend/dist и frontend/out.
+# Комментарий обязан быть на отдельной строке: git считает «#» началом
+# комментария только в начале строки, а в конце — частью шаблона, и правило
+# молча переставало работать (910 файлов сборки числились неотслеживаемыми).
+desktop/resources/
 release/
 *.app
 *.dmg
