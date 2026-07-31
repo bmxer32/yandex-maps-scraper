@@ -93,6 +93,61 @@ export function isFinalStage(stage: TaskStage): boolean {
   return stage === "done" || stage === "failed" || stage === "cancelled";
 }
 
+/* ------------------------------------------------------------------ */
+/* Персональные демо ИИ-ассистента (интеграция с kb_assistant)          */
+/* ------------------------------------------------------------------ */
+
+export interface DemoConfig {
+  /** Адрес и ключ kb_assistant заданы — колонку «Демо» вообще показываем. */
+  enabled: boolean;
+  /** kb_assistant уже отвечает. Docker-стек поднимается около минуты. */
+  ready: boolean;
+  bot_username: string | null;
+  max_pages: number;
+}
+
+/**
+ * "pending" / "crawling" — база знаний ещё собирается,
+ * "ready" — ссылку можно отправлять клиенту,
+ * "thin" — собралось, но отвечать нечем: сайт отдал в основном служебные
+ *          страницы. Ссылка рабочая, но клиенту такое слать нельзя,
+ * "failed" — сайт не удалось прокраулить,
+ * "error" — сбой обращения к kb_assistant (не статус самого демо).
+ */
+export type DemoState =
+  | "pending"
+  | "crawling"
+  | "ready"
+  | "thin"
+  | "failed"
+  | "error";
+
+export interface DemoStatus {
+  name: string | null;
+  website: string | null;
+  slug: string;
+  link: string | null;
+  status: DemoState;
+  error: string | null;
+  pages_indexed: number;
+  opened_count: number;
+  message_count: number;
+}
+
+export const DEMO_STATE_LABELS: Record<DemoState, string> = {
+  pending: "В очереди",
+  crawling: "Собираю сайт",
+  ready: "Готово",
+  thin: "Мало данных",
+  failed: "Не вышло",
+  error: "Ошибка связи",
+};
+
+/** Демо ещё в работе — таблица продолжает опрашивать статус. */
+export function isDemoPending(status: DemoState): boolean {
+  return status === "pending" || status === "crawling";
+}
+
 export function isErrorStage(stage: TaskStage): boolean {
   return stage === "failed" || stage === "cancelled";
 }

@@ -12,9 +12,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Корень backend-пакета: .../backend
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-# Папка под SQLite-базу и кэш
+# Папка под SQLite-базу и кэш.
+# В packaged режиме (Program Files) — данные в %LOCALAPPDATA%,
+# run.py выставляет DATABASE_URL до импорта config.
 DATA_DIR = BACKEND_ROOT / "data"
-DATA_DIR.mkdir(exist_ok=True)
+try:
+    DATA_DIR.mkdir(exist_ok=True)
+except (PermissionError, OSError):
+    # Program Files readonly — игнорируем, DATABASE_URL укажет в LOCALAPPDATA
+    pass
 
 
 class Settings(BaseSettings):
@@ -65,6 +71,19 @@ class Settings(BaseSettings):
 
     # --- БД ---
     database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'yascraper.db'}"
+
+    # --- Интеграция с kb_assistant (персональные демо ИИ-ассистента) ---
+    # Пусто => вкладка «Демо» в интерфейсе скрыта, парсер работает как раньше.
+    kb_base_url: str = ""                # напр. "http://127.0.0.1:8001"
+    kb_api_key: str = ""                 # значение заголовка X-API-Key
+    kb_bot_username: str = ""            # для ссылки t.me/<bot>?start=<slug>
+    kb_max_pages: int = 30               # сколько страниц сайта краулить под демо
+    kb_timeout: float = 20.0             # таймаут запроса к kb_assistant, сек
+
+    @property
+    def kb_enabled(self) -> bool:
+        """Интеграция настроена только когда заданы и адрес, и ключ."""
+        return bool(self.kb_base_url and self.kb_api_key)
 
 
 @lru_cache

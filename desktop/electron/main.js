@@ -7,6 +7,7 @@ const { app, BrowserWindow, dialog, shell, Menu } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const http = require("http");
+const { startKbStack } = require("./kb-stack");
 
 // Убираем дефолтное меню Electron (File/Edit/View/Window/Help)
 Menu.setApplicationMenu(null);
@@ -169,7 +170,7 @@ function createSplash() {
       border-radius:14px;-webkit-app-region:drag;">
       <div style="font-size:42px;margin-bottom:12px;">🗺️</div>
       <div style="font-size:18px;font-weight:600;margin-bottom:4px;">Yandex Maps Scraper</div>
-      <div style="font-size:13px;color:#9ca3af;">Запуск backend…</div>
+      <div id="status" style="font-size:13px;color:#9ca3af;">Запуск backend…</div>
       <div style="margin-top:18px;width:180px;height:3px;background:#2a2a30;border-radius:2px;overflow:hidden;">
         <div style="height:100%;width:40%;background:#f59e0b;border-radius:2px;
           animation:slide 1.2s ease-in-out infinite;"></div>
@@ -182,6 +183,16 @@ function createSplash() {
       </style>
     </body></html>
   `));
+}
+
+/** Обновить подпись на сплэше, пока он ещё виден. */
+function setSplashStatus(text) {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  splashWindow.webContents
+    .executeJavaScript(
+      `document.getElementById("status").textContent = ${JSON.stringify(text)}`,
+    )
+    .catch(() => {});
 }
 
 function createMainWindow() {
@@ -233,6 +244,17 @@ function createMainWindow() {
 app.whenReady().then(async () => {
   createSplash();
   startBackend();
+
+  // ИИ-ассистент поднимается параллельно и намеренно не блокирует окно:
+  // парсер полностью работоспособен без него, колонка «Демо» сама дождётся
+  // готовности. Стек не гасим при выходе — там же живёт Telegram-бот,
+  // который отвечает клиентам по уже разосланным ссылкам.
+  startKbStack(setSplashStatus)
+    .then((res) => {
+      if (res.ok) console.log("[main] kb_assistant готов");
+      else console.warn(`[main] kb_assistant не поднят: ${res.reason}`);
+    })
+    .catch((err) => console.error("[main] kb_assistant:", err));
 
   try {
     await waitForBackend();

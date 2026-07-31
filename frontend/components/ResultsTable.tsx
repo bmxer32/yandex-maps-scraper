@@ -2,18 +2,27 @@
 
 import { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowUpDown,
+  Bot,
+  Check,
+  Copy,
   Download,
   ExternalLink,
   Globe,
+  Loader2,
   Mail,
   MessageCircle,
   Phone,
   Search as SearchIcon,
+  Sparkles,
   Star,
+  Trash2,
 } from "lucide-react";
-import type { Organization } from "@/lib/types";
+import type { DemoStatus, Organization } from "@/lib/types";
+import { DEMO_STATE_LABELS, isDemoPending } from "@/lib/types";
 import { exportUrl } from "@/lib/api";
+import type { UseDemos } from "@/lib/useDemos";
 import {
   cn,
   formatNumber,
@@ -21,8 +30,9 @@ import {
   normalizeUrl,
   parseSocial,
   shortenUrl,
+  siteKey,
 } from "@/lib/utils";
-import { Badge, Button, Input, buttonClass } from "@/components/ui";
+import { Badge, Button, Input, Toast, buttonClass } from "@/components/ui";
 
 type SiteFilter = "all" | "with" | "without";
 type SortKey = "name" | "rating" | "reviews";
@@ -31,14 +41,23 @@ type SortDir = "asc" | "desc";
 export function ResultsTable({
   organizations,
   taskId,
+  demos,
 }: {
   organizations: Organization[];
   taskId: string;
+  /** Состояние демо поднято на страницу — оно общее с разделом «Демо». */
+  demos: UseDemos;
 }) {
   const [query, setQuery] = useState("");
   const [siteFilter, setSiteFilter] = useState<SiteFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Выбранные строки — по ключу сайта: демо привязано к сайту, а не к позиции.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const demoEnabled = demos.config?.enabled ?? false;
+  // Стек ассистента в Docker поднимается около минуты после старта программы.
+  const demoReady = demos.config?.ready ?? false;
 
   const filtered = useMemo(() => {
     let rows = organizations;
@@ -76,6 +95,27 @@ export function ResultsTable({
   const withSite = organizations.filter((o) => o.website).length;
   const withoutSite = organizations.length - withSite;
 
+  // Демо можно сделать только тем, у кого есть сайт: базу знаний собираем
+  // краулом, краулить нечего — предлагать нечего.
+  const selectableKeys = useMemo(
+    () => filtered.filter((o) => o.website).map((o) => siteKey(o.website)),
+    [filtered],
+  );
+  const selectedOrgs = useMemo(
+    () => filtered.filter((o) => o.website && selected.has(siteKey(o.website))),
+    [filtered, selected],
+  );
+  const allSelected =
+    selectableKeys.length > 0 && selectableKeys.every((k) => selected.has(k));
+
+  const demoStats = useMemo(() => {
+    const all = Object.values(demos.demos);
+    return {
+      total: all.length,
+      opened: all.filter((d) => d.opened_count > 0).length,
+    };
+  }, [demos.demos]);
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -83,6 +123,31 @@ export function ResultsTable({
       setSortKey(key);
       setSortDir("asc");
     }
+  }
+
+  function toggleRow(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => {
+      if (selectableKeys.every((k) => prev.has(k))) {
+        const next = new Set(prev);
+        selectableKeys.forEach((k) => next.delete(k));
+        return next;
+      }
+      return new Set([...prev, ...selectableKeys]);
+    });
+  }
+
+  async function makeDemos() {
+    await demos.create(selectedOrgs);
+    setSelected(new Set());
   }
 
   return (
@@ -103,6 +168,41 @@ export function ResultsTable({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Персональные демо ИИ-ассистента */}
+          {demoEnabled && (
+            <>
+              {!demoReady && (
+                <Badge variant="warning" className="px-3 py-1 text-sm">
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  ИИ-ассистент запускается…
+                </Badge>
+              )}
+              {demoReady && demoStats.total > 0 && (
+                <Badge variant="outline" className="px-3 py-1 text-sm">
+                  <Bot className="mr-1 h-3 w-3" />
+                  {formatNumber(demoStats.total)} демо
+                  {demoStats.opened > 0 && ` · ${formatNumber(demoStats.opened)} открыли`}
+                </Badge>
+              )}
+              <Button
+                size="sm"
+                onClick={makeDemos}
+                title={demoReady ? undefined : "ИИ-ассистент ещё поднимается"}
+                disabled={
+                  !demoReady || selectedOrgs.length === 0 || demos.provisioning.size > 0
+                }
+              >
+                {demos.provisioning.size > 0 ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                Сделать демо
+                {selectedOrgs.length > 0 && ` (${selectedOrgs.length})`}
+              </Button>
+            </>
+          )}
+
           {/* Экспорт */}
           <a
             href={exportUrl(taskId, "xlsx")}
@@ -166,6 +266,18 @@ export function ResultsTable({
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur">
               <tr className="border-b border-border">
+                {demoEnabled && (
+                  <th className="w-9 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Выбрать все строки с сайтом"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      disabled={selectableKeys.length === 0}
+                      className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--primary))] disabled:cursor-not-allowed disabled:opacity-40"
+                    />
+                  </th>
+                )}
                 <th className="px-3 py-3 text-left">
                   <SortButton
                     label="Название"
@@ -191,15 +303,31 @@ export function ResultsTable({
                     align="right"
                   />
                 </th>
+                {demoEnabled && <th className="px-3 py-3 text-left">Демо</th>}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((org, i) => (
-                <OrgRow key={org.permalink ?? `${org.name}-${i}`} org={org} />
-              ))}
+              {filtered.map((org, i) => {
+                const key = siteKey(org.website);
+                return (
+                  <OrgRow
+                    key={org.permalink ?? `${org.name}-${i}`}
+                    org={org}
+                    demoEnabled={demoEnabled}
+                    demo={key ? demos.demos[key] : undefined}
+                    selected={selected.has(key)}
+                    provisioning={demos.provisioning.has(key)}
+                    onToggle={() => key && toggleRow(key)}
+                    onDeleteDemo={demos.remove}
+                  />
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-12 text-center text-muted-foreground">
+                  <td
+                    colSpan={demoEnabled ? 8 : 6}
+                    className="px-3 py-12 text-center text-muted-foreground"
+                  >
                     Ничего не найдено по фильтрам
                   </td>
                 </tr>
@@ -212,11 +340,68 @@ export function ResultsTable({
       <p className="text-xs text-muted-foreground">
         Показано {formatNumber(filtered.length)} из {formatNumber(organizations.length)}
       </p>
+
+      {demos.error && (
+        <Toast message={demos.error} variant="destructive" onClose={demos.clearError} />
+      )}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
+
+/** Удаление демо в два клика — сносится и собранная база знаний. */
+function DeleteDemoButton({
+  slug,
+  confirming,
+  setConfirming,
+  onDelete,
+}: {
+  slug: string;
+  confirming: boolean;
+  setConfirming: (v: boolean) => void;
+  onDelete: (slug: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  if (confirming) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onDelete(slug);
+            } finally {
+              setBusy(false);
+              setConfirming(false);
+            }
+          }}
+          className="rounded bg-destructive px-1.5 py-0.5 text-[10px] font-medium text-destructive-foreground disabled:opacity-50"
+        >
+          {busy ? "…" : "Удалить"}
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          className="text-[10px] text-muted-foreground hover:text-foreground"
+        >
+          нет
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setConfirming(true)}
+      title="Удалить демо вместе с базой знаний"
+      className="text-muted-foreground transition-colors hover:text-destructive"
+    >
+      <Trash2 className="h-3 w-3" />
+    </button>
+  );
+}
 
 function SortButton({
   label,
@@ -246,12 +431,43 @@ function SortButton({
   );
 }
 
-function OrgRow({ org }: { org: Organization }) {
+function OrgRow({
+  org,
+  demoEnabled,
+  demo,
+  selected,
+  provisioning,
+  onToggle,
+  onDeleteDemo,
+}: {
+  org: Organization;
+  demoEnabled: boolean;
+  demo?: DemoStatus;
+  selected: boolean;
+  provisioning: boolean;
+  onToggle: () => void;
+  onDeleteDemo: (slug: string) => Promise<void>;
+}) {
   const siteUrl = normalizeUrl(org.website);
   const hasSocials = org.socials.length > 0;
 
   return (
     <tr className="border-b border-border/50 transition-colors hover:bg-secondary/30">
+      {/* Выбор строки под демо */}
+      {demoEnabled && (
+        <td className="px-3 py-3 align-top">
+          {org.website ? (
+            <input
+              type="checkbox"
+              aria-label={`Выбрать ${org.name}`}
+              checked={selected}
+              onChange={onToggle}
+              className="mt-1 h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--primary))]"
+            />
+          ) : null}
+        </td>
+      )}
+
       {/* Название */}
       <td className="px-3 py-3 align-top">
         <div className="font-medium leading-tight">{org.name}</div>
@@ -282,7 +498,9 @@ function OrgRow({ org }: { org: Organization }) {
             className="inline-flex items-center gap-1.5 text-foreground hover:text-primary"
           >
             <Phone className="h-3 w-3 text-muted-foreground" />
-            <span className="font-mono text-xs">{formatPhone(org.phone)}</span>
+            <span className="whitespace-nowrap font-mono text-[11px] leading-tight">
+              {formatPhone(org.phone)}
+            </span>
           </a>
         ) : (
           <span className="text-muted-foreground/50">—</span>
@@ -366,6 +584,165 @@ function OrgRow({ org }: { org: Organization }) {
           <span className="text-muted-foreground/40">—</span>
         )}
       </td>
+
+      {/* Демо ИИ-ассистента */}
+      {demoEnabled && (
+        <td className="px-3 py-3 align-top">
+          <DemoCell
+            demo={demo}
+            provisioning={provisioning}
+            hasSite={!!org.website}
+            onDelete={onDeleteDemo}
+          />
+        </td>
+      )}
     </tr>
+  );
+}
+
+/** Состояние демо для одной организации: ссылка, прогресс или причина отказа. */
+function DemoCell({
+  demo,
+  provisioning,
+  hasSite,
+  onDelete,
+}: {
+  demo?: DemoStatus;
+  provisioning: boolean;
+  hasSite: boolean;
+  onDelete: (slug: string) => Promise<void>;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  if (provisioning) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Завожу…
+      </span>
+    );
+  }
+
+  if (!demo) {
+    return hasSite ? (
+      <span className="text-muted-foreground/40">—</span>
+    ) : (
+      <span className="text-[10px] text-muted-foreground/50">нужен сайт</span>
+    );
+  }
+
+  if (isDemoPending(demo.status)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {DEMO_STATE_LABELS[demo.status]}
+      </span>
+    );
+  }
+
+  // «Мало данных» — не ошибка: ссылка рабочая, посмотреть можно, но клиенту
+  // такое отправлять нельзя. Поэтому предупреждение, а не красный статус.
+  if (demo.status === "thin") {
+    return (
+      <div className="flex flex-col gap-1">
+        <span
+          title={demo.error ?? "Сайт отдал мало полезного — отправлять клиенту рано"}
+          className="inline-flex w-fit items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning"
+        >
+          <AlertTriangle className="h-2.5 w-2.5" />
+          {DEMO_STATE_LABELS.thin}
+        </span>
+        <div className="flex items-center gap-2">
+          {demo.link && (
+            <a
+              href={demo.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+            >
+              проверить самому
+            </a>
+          )}
+          <DeleteDemoButton
+            slug={demo.slug}
+            confirming={confirming}
+            setConfirming={setConfirming}
+            onDelete={onDelete}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (demo.status !== "ready") {
+    return (
+      <span
+        title={demo.error ?? undefined}
+        className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive"
+      >
+        {DEMO_STATE_LABELS[demo.status]}
+      </span>
+    );
+  }
+
+  async function copyLink() {
+    if (!demo?.link) return;
+    try {
+      await navigator.clipboard.writeText(demo.link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Буфер обмена недоступен — ссылка всё равно кликабельна рядом.
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        {demo.link ? (
+          <>
+            <a
+              href={demo.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Bot className="h-3 w-3" />
+              Демо
+            </a>
+            <button
+              onClick={copyLink}
+              title="Скопировать ссылку"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {copied ? (
+                <Check className="h-3 w-3 text-success" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </button>
+          </>
+        ) : (
+          // Демо готово, но username бота не задан — ссылку собрать не из чего.
+          <span className="font-mono text-[10px] text-muted-foreground">{demo.slug}</span>
+        )}
+        <DeleteDemoButton
+          slug={demo.slug}
+          confirming={confirming}
+          setConfirming={setConfirming}
+          onDelete={onDelete}
+        />
+      </div>
+
+      <span className="text-[10px] text-muted-foreground">
+        {demo.pages_indexed > 0 && `${demo.pages_indexed} стр.`}
+        {demo.opened_count > 0 && (
+          <span className="ml-1 text-success">
+            · открыл{demo.message_count > 0 && `, ${demo.message_count} вопр.`}
+          </span>
+        )}
+      </span>
+    </div>
   );
 }

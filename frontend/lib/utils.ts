@@ -34,6 +34,21 @@ export function normalizeUrl(url: string | null): string | null {
   return url.startsWith("http") ? url : `https://${url}`;
 }
 
+/**
+ * Ключ сайта для сопоставления строки таблицы с заведённым демо.
+ * Схема, www и хвостовой слэш отбрасываются: организация та же, даже если
+ * Яндекс отдал «http://site.ru/», а kb_assistant вернул «https://www.site.ru».
+ */
+export function siteKey(url: string | null | undefined): string {
+  if (!url) return "";
+  return url
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/+$/, "");
+}
+
 /** Разбить «Label: url» из socials на компоненты. */
 export function parseSocial(s: string): { label: string; url: string } {
   const [label, ...rest] = s.split(":");
