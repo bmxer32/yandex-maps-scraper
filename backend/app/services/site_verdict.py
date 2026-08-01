@@ -2,11 +2,18 @@
 Третья ступень: вердикт модели по тексту главной страницы.
 
 Регулярками не отличить сеть из двенадцати филиалов от одиночной студии и не
-понять, есть ли на сайте вообще что продавать. Здесь это делает Gemini — один
+понять, есть ли на сайте вообще что продавать. Здесь это делает модель — один
 вызов на компанию, только для тех, у кого главная скачалась.
 
-Ключ не задан или модель недоступна — ступень молча пропускается, первые две
-продолжают работать. Отсутствие вердикта никогда не понижает клиента: незнание
+Провайдеры пробуются цепочкой, пока кто-то не ответит:
+
+1. Gemini — все заданные ключи по очереди (лимит бесплатного тира считается
+   на проект, поэтому ключи с разных аккаунтов складываются);
+2. Groq — бесплатный тир, OpenAI-совместимый API;
+3. OpenRouter — бесплатные модели, тот же формат запроса.
+
+Никто не ответил — ступень молча пропускается, первые две продолжают
+работать. Отсутствие вердикта никогда не понижает клиента: незнание
 трактуется в его пользу.
 """
 from __future__ import annotations
@@ -61,6 +68,8 @@ class Verdict:
     verdict: Optional[str] = None
     reason: Optional[str] = None
     error: Optional[str] = None
+    # Кто именно ответил — видно в логах, когда основной провайдер кончился.
+    provider: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -101,19 +110,23 @@ def _parse(raw: str) -> Verdict:
     )
 
 
-def enabled() -> bool:
-    """Настроен ли ключ — без него ступень просто не выполняется."""
-    return bool(settings.google_api_key)
+# --- Провайдеры ------------------------------------------------------------
+# Каждый возвращает сырой текст ответа. Порядок фиксированный: сначала все
+# ключи Gemini, потом бесплатные тиры других вендоров. У каждого свой лимит,
+# поэтому исчерпанный Gemini не оставляет нас без вердиктов.
 
 
-async def classify(client: httpx.AsyncClient, name: str, text: str) -> Verdict:
-    """Спросить модель про одну компанию. Никогда не бросает."""
-    if not enabled():
-        return Verdict(error="GOOGLE_API_KEY не задан")
-    if not text.strip():
-        return Verdict(error="нет текста страницы")
+@dataclass
+class _Attempt:
+    """Результат одной попытки: текст ответа либо причина неудачи."""
 
-    prompt = _PROMPT.format(name=name, text=text[: settings.verdict_text_limit])
+    raw: Optional[str] = None
+    quota: bool = False          # упёрлись в лимит — есть смысл идти дальше
+    error: Optional[str] = None
+    provider: str = ""
+
+
+async def _try_gemini(client: httpx.AsyncClient, key: str, prompt: str) -> _Attempt:
     url = _ENDPOINT.format(model=settings.verdict_model)
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -129,41 +142,143 @@ async def classify(client: httpx.AsyncClient, name: str, text: str) -> Verdict:
             "responseMimeType": "application/json",
         },
     }
-
-    resp = None
-    for attempt in range(max(settings.verdict_retries, 1)):
-        try:
-            resp = await client.post(
-                url,
-                params={"key": settings.google_api_key},
-                json=payload,
-                timeout=settings.verdict_timeout,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("Вердикт для {!r} не получен: {}", name, exc)
-            return Verdict(error=f"модель недоступна: {type(exc).__name__}")
-
-        if resp.status_code != 429:
-            break
-        # Бесплатный тир считает запросы в минуту. Ждём с нарастающей паузой:
-        # компания без вердикта останется «сомнительной», то есть попадёт на
-        # ручную проверку — дешевле подождать пару секунд.
-        if attempt < settings.verdict_retries - 1:
-            await asyncio.sleep(2 * (attempt + 1) ** 2)
-
-    if resp is None:
-        return Verdict(error="модель недоступна")
+    try:
+        resp = await client.post(
+            url, params={"key": key}, json=payload, timeout=settings.verdict_timeout
+        )
+    except httpx.HTTPError as exc:
+        return _Attempt(error=f"недоступен: {type(exc).__name__}", provider="gemini")
 
     if resp.status_code == 429:
-        return Verdict(error="лимит запросов к модели исчерпан")
+        return _Attempt(quota=True, error="лимит исчерпан", provider="gemini")
     if resp.status_code >= 400:
-        logger.warning("Вердикт для {!r}: HTTP {} {}", name, resp.status_code, resp.text[:200])
-        return Verdict(error=f"модель вернула {resp.status_code}")
+        return _Attempt(error=f"HTTP {resp.status_code}", provider="gemini")
 
     try:
         parts = resp.json()["candidates"][0]["content"]["parts"]
-        raw = "".join(p.get("text", "") for p in parts)
+        return _Attempt(raw="".join(p.get("text", "") for p in parts), provider="gemini")
     except (KeyError, IndexError, ValueError):
-        return Verdict(error="неожиданный формат ответа модели")
+        return _Attempt(error="неожиданный формат ответа", provider="gemini")
 
-    return _parse(raw)
+
+async def _try_openai_compatible(
+    client: httpx.AsyncClient, *, base: str, key: str, model: str, prompt: str, provider: str
+) -> _Attempt:
+    """Groq и OpenRouter говорят на одном диалекте — обработчик общий."""
+    try:
+        resp = await client.post(
+            f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "max_tokens": 400,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=settings.verdict_timeout,
+        )
+    except httpx.HTTPError as exc:
+        return _Attempt(error=f"недоступен: {type(exc).__name__}", provider=provider)
+
+    if resp.status_code == 429:
+        return _Attempt(quota=True, error="лимит исчерпан", provider=provider)
+    if resp.status_code >= 400:
+        return _Attempt(error=f"HTTP {resp.status_code}", provider=provider)
+
+    try:
+        return _Attempt(
+            raw=resp.json()["choices"][0]["message"]["content"], provider=provider
+        )
+    except (KeyError, IndexError, ValueError):
+        return _Attempt(error="неожиданный формат ответа", provider=provider)
+
+
+def providers() -> list[str]:
+    """Список настроенных провайдеров по порядку — для диагностики и UI."""
+    names = [f"gemini#{i + 1}" for i in range(len(settings.gemini_keys))]
+    if settings.groq_api_key:
+        names.append("groq")
+    if settings.openrouter_api_key:
+        names.append("openrouter")
+    return names
+
+
+def enabled() -> bool:
+    """Есть ли хоть один настроенный провайдер."""
+    return bool(providers())
+
+
+async def classify(client: httpx.AsyncClient, name: str, text: str) -> Verdict:
+    """Спросить модель про одну компанию. Никогда не бросает.
+
+    Провайдеры перебираются по очереди. На лимит переходим к следующему сразу
+    — ждать минуту ради одной строки дороже, чем спросить другого вендора.
+    Повторы с паузой остаются на случай, когда провайдер один.
+    """
+    if not enabled():
+        return Verdict(error="не задан ни один ключ модели")
+    if not text.strip():
+        return Verdict(error="нет текста страницы")
+
+    prompt = _PROMPT.format(name=name, text=text[: settings.verdict_text_limit])
+
+    chain = [(lambda k=k: _try_gemini(client, k, prompt)) for k in settings.gemini_keys]
+    if settings.groq_api_key:
+        chain.append(
+            lambda: _try_openai_compatible(
+                client,
+                base="https://api.groq.com/openai/v1",
+                key=settings.groq_api_key,
+                model=settings.groq_model,
+                prompt=prompt,
+                provider="groq",
+            )
+        )
+    if settings.openrouter_api_key:
+        chain.append(
+            lambda: _try_openai_compatible(
+                client,
+                base="https://openrouter.ai/api/v1",
+                key=settings.openrouter_api_key,
+                model=settings.openrouter_model,
+                prompt=prompt,
+                provider="openrouter",
+            )
+        )
+
+    quota_only = True
+    last_error = "модель недоступна"
+
+    for call in chain:
+        attempt = await call()
+        if attempt.raw is not None:
+            parsed = _parse(attempt.raw)
+            parsed.provider = attempt.provider
+            if parsed.ok:
+                return parsed
+            last_error = parsed.error or "не разобрал ответ"
+            quota_only = False
+            continue
+        last_error = f"{attempt.provider}: {attempt.error}"
+        if not attempt.quota:
+            quota_only = False
+
+    # Провайдер один и он в лимите — подождать дешевле, чем оставить строку
+    # без вердикта: она уйдёт в «сомнительно» и на ручную проверку.
+    if quota_only and len(chain) == 1:
+        for attempt_no in range(1, max(settings.verdict_retries, 1)):
+            await asyncio.sleep(2 * attempt_no**2)
+            attempt = await chain[0]()
+            if attempt.raw is not None:
+                parsed = _parse(attempt.raw)
+                parsed.provider = attempt.provider
+                if parsed.ok:
+                    return parsed
+            if not attempt.quota:
+                break
+
+    if quota_only:
+        return Verdict(error="лимит запросов к модели исчерпан")
+    logger.debug("Вердикт для {!r} не получен: {}", name, last_error)
+    return Verdict(error=last_error)

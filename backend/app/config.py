@@ -89,6 +89,16 @@ class Settings(BaseSettings):
     # Ключ Gemini для третьей ступени. Пусто => ступень пропускается,
     # механика и проба сайта продолжают работать.
     google_api_key: str = ""
+    # Запасные ключи Gemini через запятую. Лимит бесплатного тира считается
+    # на проект, поэтому ключи с разных аккаунтов складываются: упёрлись в
+    # 429 по одному — берём следующий.
+    google_api_keys_extra: str = ""
+    # Запасные провайдеры с бесплатным тиром, совместимые с OpenAI API.
+    # Пробуются по очереди, когда Gemini исчерпан. Ключ не задан — пропуск.
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
     verdict_model: str = "gemini-flash-latest"
     verdict_timeout: float = 30.0
     verdict_text_limit: int = 8000     # знаков главной страницы в промпт
@@ -99,6 +109,16 @@ class Settings(BaseSettings):
     scan_concurrency: int = 8          # параллельных проб сайтов
     scan_timeout: float = 12.0         # таймаут одной пробы, сек
     min_reviews: int = 5               # мягкий порог «живого» бизнеса
+
+    @property
+    def gemini_keys(self) -> list[str]:
+        """Все ключи Gemini по порядку: основной, затем запасные."""
+        keys = [self.google_api_key.strip()]
+        keys += [k.strip() for k in self.google_api_keys_extra.split(",")]
+        # Дубли убираем, сохраняя порядок: повторный запрос тем же ключом
+        # после 429 просто потратит время.
+        seen: set[str] = set()
+        return [k for k in keys if k and not (k in seen or seen.add(k))]
 
 
 @lru_cache

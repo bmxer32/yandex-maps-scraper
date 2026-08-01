@@ -160,6 +160,59 @@ def test_broken_model_answer() -> None:
     check(v.verdict == "годится", "JSON в блоке кода разбирается")
 
 
+async def test_provider_chain() -> None:
+    """Кончился один провайдер — спрашиваем следующего, а не сдаёмся."""
+    print("\nцепочка провайдеров:")
+    import httpx
+
+    from app.config import settings as cfg
+
+    calls: list[str] = []
+
+    async def fake_gemini(client, key, prompt):
+        calls.append(f"gemini:{key}")
+        return site_verdict._Attempt(quota=True, error="лимит исчерпан", provider="gemini")
+
+    async def fake_openai(client, *, base, key, model, prompt, provider):
+        calls.append(provider)
+        return site_verdict._Attempt(
+            raw='{"scale":"одиночка","alive":"живой","sellable":true,'
+                '"verdict":"годится","reason":"живая студия"}',
+            provider=provider,
+        )
+
+    orig_g, orig_o = site_verdict._try_gemini, site_verdict._try_openai_compatible
+    orig_key, orig_extra, orig_groq = cfg.google_api_key, cfg.google_api_keys_extra, cfg.groq_api_key
+    try:
+        site_verdict._try_gemini = fake_gemini
+        site_verdict._try_openai_compatible = fake_openai
+        cfg.google_api_key, cfg.google_api_keys_extra, cfg.groq_api_key = "k1", "k2", "gk"
+
+        check(site_verdict.providers() == ["gemini#1", "gemini#2", "groq"], "порядок провайдеров")
+
+        async with httpx.AsyncClient() as c:
+            v = await site_verdict.classify(c, "Студия", "Маникюр, педикюр, цены на сайте.")
+        check(v.verdict == "годится", "вердикт получен от запасного провайдера")
+        check(v.provider == "groq", f"ответил {v.provider}")
+        check(calls == ["gemini:k1", "gemini:k2", "groq"], "оба ключа Gemini перебраны до groq")
+
+        # Все в лимите — вердикта нет, но это НЕ отсев.
+        site_verdict._try_openai_compatible = fake_gemini_like = (
+            lambda client, *, base, key, model, prompt, provider: _quota(provider)
+        )
+        async with httpx.AsyncClient() as c:
+            v2 = await site_verdict.classify(c, "Студия", "текст")
+        check("лимит" in (v2.error or ""), "все провайдеры в лимите → ошибка про лимит")
+        check(v2.verdict is None, "вердикта нет — компания останется как есть")
+    finally:
+        site_verdict._try_gemini, site_verdict._try_openai_compatible = orig_g, orig_o
+        cfg.google_api_key, cfg.google_api_keys_extra, cfg.groq_api_key = orig_key, orig_extra, orig_groq
+
+
+async def _quota(provider: str):
+    return site_verdict._Attempt(quota=True, error="лимит исчерпан", provider=provider)
+
+
 async def test_nothing_is_lost() -> None:
     """Главная гарантия: сколько строк пришло, столько и вернулось."""
     print("\nни одна строка не теряется:")
@@ -184,6 +237,7 @@ async def main() -> None:
     test_year_only_from_copyright()
     test_llm_can_skip_but_reviews_protect()
     test_broken_model_answer()
+    await test_provider_chain()
     await test_nothing_is_lost()
 
     print()
