@@ -1,6 +1,6 @@
 {
   "name": "yandex-maps-scraper",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Сбор данных с Яндекс.Карт: сфера, контакты, сайты, email",
   "author": "ENI",
   "main": "electron/main.js",
