@@ -374,6 +374,28 @@ def test_online_booking() -> None:
     )
     check(v.web == "skip", "запись есть — переделывать нечего")
 
+    # Сайт салона на Tilda: переделывать нечего, но и записи нет — человек
+    # должен видеть, почему строка «возможно», а не гадать.
+    v = ProspectVerdict(site="t", name="Салон", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v,
+        ProbeResult(ok=True, status=200, text_len=5000, tech=TechSignals(builder=True)),
+        booking_matters=True,
+    )
+    check(v.web == "maybe", "конструктор без записи — «возможно»")
+    check(any("конструктор" in r for r in v.web_reasons)
+          and any("записаться" in r for r in v.web_reasons),
+          "названы обе причины: и конструктор, и отсутствие записи")
+
+    v = ProspectVerdict(site="t2", name="Магазин", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v,
+        ProbeResult(ok=True, status=200, text_len=5000, tech=TechSignals(builder=True)),
+        booking_matters=False,
+    )
+    check(not any("записаться" in r for r in v.web_reasons),
+          "магазину про запись не пишем")
+
 
 def test_web_axis() -> None:
     """Вторая ось живёт отдельно от первой: нет сайта — плохо для демо, но это лучший клиент."""

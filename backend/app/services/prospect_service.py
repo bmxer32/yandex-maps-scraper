@@ -170,7 +170,13 @@ def _apply_probe(
         v.web = VERDICT_GOOD
         v.web_reasons.extend(probe.tech.summary())
     elif probe.tech.builder:
+        # Конструктор: сайт рабочий, переделывать нечего. Но причину назвать
+        # надо — «возможно» без объяснения человеку ничего не даёт. И запись
+        # тут проверяется так же: она к платформе отношения не имеет.
         v.web = VERDICT_MAYBE
+        v.web_reasons.append("сайт на конструкторе — рабочий, но простой")
+        if booking_matters:
+            v.web_reasons.extend(probe.tech.booking_note())
     elif stale:
         v.web = VERDICT_GOOD
         v.web_reasons.append(f"сайт не обновляли с {probe.last_year} года")

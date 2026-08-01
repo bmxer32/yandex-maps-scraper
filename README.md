@@ -297,7 +297,7 @@ yandex-maps-scraper/
 Pytest в проекте не используется — проверки лежат отдельными скриптами и запускаются из папки `backend`:
 
 ```bash
-python checks/prospects_check.py   # отбор клиентов: 108 проверок
+python checks/prospects_check.py   # отбор клиентов: 111 проверок
 python checks/demos_check.py       # интеграция с kb_assistant: 22 проверки
 ```
 
