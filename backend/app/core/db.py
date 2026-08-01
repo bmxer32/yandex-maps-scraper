@@ -71,12 +71,24 @@ class SiteVerdictRow(Base):
 
 
 class SearchHistoryRow(Base):
-    """История поисковых запросов (чтобы показывать в UI «недавние»)."""
+    """Завершённая выгрузка целиком: запрос, результат и счётчики.
+
+    Задачи живут в памяти, поэтому после перезапуска программы результат
+    пропадал и приходилось парсить заново — а это минуты работы браузера и
+    лишняя нагрузка на Яндекс. Организации храним прямо здесь: тридцать-
+    тысяча карточек это сотни килобайт, SQLite такое держит спокойно, а
+    раскладывать их по таблицам ради истории просмотров незачем.
+    """
     __tablename__ = "search_history"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # task_id
     request_json: Mapped[str] = mapped_column(Text)            # сериализованный SearchRequest
     found_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Разбор запроса для списка — чтобы не парсить JSON ради подписи строки.
+    category: Mapped[Optional[str]] = mapped_column(String)
+    location: Mapped[Optional[str]] = mapped_column(String)
+    with_website: Mapped[int] = mapped_column(Integer, default=0)
+    organizations: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -93,10 +105,39 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+async def _add_missing_columns(conn) -> None:
+    """Досоздать колонки, появившиеся после того, как таблица уже была создана.
+
+    Alembic в парсере нет, а `create_all` существующие таблицы не трогает:
+    добавив поле в модель, получаешь «no such column» на живой базе. SQLite
+    умеет ADD COLUMN, и для дописывания необязательных полей этого хватает.
+    Переименования и смену типов так не сделать — если понадобятся, придётся
+    заводить настоящие миграции.
+    """
+    for table in Base.metadata.sorted_tables:
+        existing = {
+            row[1]
+            for row in (await conn.exec_driver_sql(f"PRAGMA table_info('{table.name}')")).fetchall()
+        }
+        if not existing:
+            continue  # таблицы ещё нет — её создаст create_all
+        for column in table.columns:
+            if column.name in existing:
+                continue
+            ddl = column.type.compile(engine.dialect)
+            default = ""
+            if column.default is not None and getattr(column.default, "is_scalar", False):
+                default = f" DEFAULT {column.default.arg!r}"
+            await conn.exec_driver_sql(
+                f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}{default}'
+            )
+
+
 async def init_db() -> None:
-    """Создать таблицы при старте приложения."""
+    """Создать таблицы при старте приложения и дописать новые колонки."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _add_missing_columns(conn)
 
 
 async def get_session() -> AsyncSession:

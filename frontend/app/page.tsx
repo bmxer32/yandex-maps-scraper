@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Map, Bot, Database, Github, Zap } from "lucide-react";
+import { Map, Bot, Clock, Database, Github, Zap } from "lucide-react";
 import type { GeoNode, SearchRequest, TaskProgress, TaskResult } from "@/lib/types";
 import {
   cancelTask,
@@ -17,9 +17,10 @@ import { SearchForm } from "@/components/SearchForm";
 import { ProgressView } from "@/components/ProgressView";
 import { ResultsTable } from "@/components/ResultsTable";
 import { DemosPanel } from "@/components/DemosPanel";
+import { HistoryPanel } from "@/components/HistoryPanel";
 import { Skeleton, Toast } from "@/components/ui";
 
-type Tab = "search" | "demos";
+type Tab = "search" | "history" | "demos";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("search");
@@ -127,6 +128,7 @@ export default function Home() {
             <div className="flex rounded-md border border-border p-0.5">
               {([
                 { id: "search" as Tab, label: "Поиск", icon: Map },
+                { id: "history" as Tab, label: "История", icon: Clock },
                 { id: "demos" as Tab, label: "Демо", icon: Bot },
               ]).map(({ id, label, icon: Icon }) => (
                 <button
@@ -169,6 +171,25 @@ export default function Home() {
 
       {/* Контент */}
       <div className="mx-auto max-w-[1700px] space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        {tab === "history" && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-start gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">История выгрузок</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Собранное сохраняется автоматически. Откройте любую выгрузку —
+                она загрузится целиком, без повторного парсинга Яндекс.Карт.
+              </p>
+            </div>
+            <HistoryPanel
+              onOpen={(res) => {
+                setResult(res);
+                setProgress(null);
+                setTab("search");
+              }}
+            />
+          </div>
+        )}
+
         {tab === "demos" && (
           <div className="space-y-4">
             <div className="flex flex-col items-start gap-2">

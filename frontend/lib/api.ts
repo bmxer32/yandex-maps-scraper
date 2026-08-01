@@ -6,6 +6,7 @@ import type {
   DemoConfig,
   DemoStatus,
   GeoNode,
+  HistoryRun,
   ProspectVerdict,
   ScanResult,
   SearchRequest,
@@ -65,6 +66,29 @@ export function exportUrl(
   const params = new URLSearchParams({ fmt });
   if (onlyWithWebsite) params.set("only_with_website", "true");
   return `${API_URL}/api/export/${taskId}?${params.toString()}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* История выгрузок                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Недавние выгрузки — задачи живут в памяти и перезапуск их не переживает. */
+export async function listHistory(): Promise<HistoryRun[]> {
+  const resp = await fetch(`${API_URL}/api/history`, { cache: "no-store" });
+  return handle<HistoryRun[]>(resp);
+}
+
+/** Открыть сохранённую выгрузку целиком, без повторного парсинга. */
+export async function loadHistoryRun(taskId: string): Promise<TaskResult> {
+  const resp = await fetch(`${API_URL}/api/history/${taskId}`, { cache: "no-store" });
+  return handle<TaskResult>(resp);
+}
+
+export async function deleteHistoryRun(taskId: string): Promise<void> {
+  const resp = await fetch(`${API_URL}/api/history/${taskId}`, { method: "DELETE" });
+  if (!resp.ok && resp.status !== 204) {
+    throw new Error(`API ${resp.status}`);
+  }
 }
 
 /* ------------------------------------------------------------------ */
