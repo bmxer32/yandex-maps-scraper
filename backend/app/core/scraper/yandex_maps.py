@@ -28,6 +28,7 @@ from playwright.async_api import (
 )
 
 from ...config import settings
+from .socials import normalize_all
 from ...models.schemas import Organization, SearchRequest, TaskStage
 from .anti_detect import (
     BrowserProfile,
@@ -717,7 +718,9 @@ def _enrich_from_card_html(org: Organization, html: str) -> None:
                     break
                 new_socials.add(f"{label}: {href}")
                 break
-    org.socials = sorted(new_socials)
+    # Отсеиваем ссылки, ведущие не на аккаунт: клиент жал «Telegram»
+    # и попадал на telegram.org, потому что юзернейма такого нет.
+    org.socials = normalize_all(sorted(new_socials))
 
     if not org.phone:
         m = re.search(r'href="tel:\+?(\d[\d()\-\s]{6,20})"', html)

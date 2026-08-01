@@ -179,6 +179,30 @@ def test_maps_url_parsing() -> None:
         check(got == expect, f"{(text or '(пусто)')[:44]:<46} → {got}")
 
 
+def test_social_links() -> None:
+    """Ссылка на сам мессенджер вместо аккаунта — хуже, чем её отсутствие."""
+    print("\nссылки на соцсети:")
+    from app.core.scraper.socials import normalize_social as n
+
+    # Реальные случаи из выгрузки: по ним клиент попадал на telegram.org.
+    check(n("Telegram", "https://t.me/Салон") is None,
+          "кириллический «юзернейм» отброшен")
+    check(n("Telegram", "https://telegram.org") is None, "голый telegram.org отброшен")
+    check(n("Telegram", "https://t.me/") is None, "t.me без пути отброшен")
+    check(n("Telegram", "https://t.me/ab") is None, "слишком короткий юзернейм отброшен")
+    check(n("VK", "https://vk.com/") is None, "vk.com без аккаунта отброшен")
+    check(n("Facebook", "https://facebook.com/sharer.php") is None, "кнопка «поделиться» отброшена")
+
+    check(n("Telegram", "https://t.me/abc_engschool") == "Telegram: https://t.me/abc_engschool",
+          "нормальный юзернейм сохранён")
+    check(n("Telegram", "https://t.me/79110011147") == "Telegram: https://t.me/+79110011147",
+          "телефон без плюса починен")
+    check(n("Telegram", "https://t.me/89006502424") == "Telegram: https://t.me/+79006502424",
+          "местный формат 8… приведён к +7…")
+    check(n("WhatsApp", "https://wa.me/89006502424") == "WhatsApp: https://wa.me/79006502424",
+          "то же для WhatsApp")
+
+
 async def test_provider_chain() -> None:
     """Кончился один провайдер — спрашиваем следующего, а не сдаёмся."""
     print("\nцепочка провайдеров:")
@@ -257,6 +281,7 @@ async def main() -> None:
     test_llm_can_skip_but_reviews_protect()
     test_broken_model_answer()
     test_maps_url_parsing()
+    test_social_links()
     await test_provider_chain()
     await test_nothing_is_lost()
 

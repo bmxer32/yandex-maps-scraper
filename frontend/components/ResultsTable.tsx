@@ -33,6 +33,7 @@ import {
   formatPhone,
   normalizeUrl,
   parseSocial,
+  isUsefulSocial,
   shortenUrl,
   siteKey,
   yandexMapsUrl,
@@ -602,7 +603,10 @@ function OrgRow({
   showVerdict: boolean;
 }) {
   const siteUrl = normalizeUrl(org.website);
-  const hasSocials = org.socials.length > 0;
+  // Ссылки, ведущие на сам сервис вместо аккаунта, не показываем: клик по
+  // ним выглядит как поломка. В истории такие ещё встречаются.
+  const socials = org.socials.filter((s) => isUsefulSocial(parseSocial(s).url));
+  const hasSocials = socials.length > 0;
   const mapsUrl = yandexMapsUrl(org);
 
   return (
@@ -717,7 +721,7 @@ function OrgRow({
           ) : null}
           {hasSocials && (
             <div className="flex flex-wrap gap-1">
-              {org.socials.slice(0, 3).map((s) => {
+              {socials.slice(0, 3).map((s) => {
                 const { label, url } = parseSocial(s);
                 return (
                   <a

@@ -78,6 +78,39 @@ export function parseSocial(s: string): { label: string; url: string } {
   return { label: label.trim(), url: rest.join(":").trim() };
 }
 
+/**
+ * Ведёт ли ссылка на аккаунт, а не на сам сервис.
+ *
+ * Бэкенд такие уже отсеивает, но в истории лежат выгрузки, собранные до
+ * этого — там встречается `t.me/Салон` и голый `telegram.org`. Telegram на
+ * несуществующий адрес отдаёт свою главную, и клик выглядит как поломка.
+ * Лучше не показать ссылку, чем показать ведущую в никуда.
+ */
+export function isUsefulSocial(url: string): boolean {
+  if (!url || !/^https?:\/\//i.test(url)) return false;
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/^\/|\/$/g, "");
+    if (!path) return false;
+
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "telegram.org") return false;
+
+    if (host === "t.me" || host === "telegram.me") {
+      const first = path.split("/")[0];
+      // Юзернеймы в Telegram только латиницей; телефон — со знаком «+».
+      return (
+        /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(first) ||
+        /^\+[\w-]{5,}$/.test(first) ||
+        first.startsWith("joinchat")
+      );
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Число с разделителем тысяч. */
 export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
