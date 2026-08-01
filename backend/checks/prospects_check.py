@@ -230,6 +230,16 @@ def test_several_sites() -> None:
     )
     check(v.web == "skip", "живой современный сайт во второй ссылке снимает ось")
 
+    # А там, где записываются на время, тот же сайт без записи ось не снимает
+    # совсем: сайт есть, но клиенту всё равно приходится писать администратору.
+    v = ProspectVerdict(site="x2", name="Салон", verdict="good", web="good", demo="auto")
+    prospect_service._apply_other_sites(
+        v,
+        [("https://salon.ru", ProbeResult(ok=True, status=200, text_len=5000))],
+        booking_matters=True,
+    )
+    check(v.web == "maybe", "второй сайт без записи — «возможно», а не «не нужен»")
+
     v = ProspectVerdict(site="y", name="Y", verdict="good", web="good", demo="auto")
     prospect_service._apply_other_sites(
         v,
@@ -284,7 +294,20 @@ def test_tech_signals() -> None:
     )
     check(tilda.builder, "конструктор распознан")
     check(not tilda.outdated, "конструктор НЕ считается устаревшим — jQuery там платформенный")
-    check(tilda.summary() == ["сайт на конструкторе"], "у конструктора не перечисляем чужой стек")
+    # Про стек конструктора говорить нечего, а вот про запись — есть: это
+    # свойство сайта, а не платформы, и оно к делу относится.
+    check(tilda.summary()[0] == "сайт на конструкторе",
+          "у конструктора не перечисляем чужой стек")
+    check(not any("jQuery" in s for s in tilda.summary()),
+          "платформенный jQuery в причины не попал")
+
+    tilda_booking = _tech(
+        '<script src="https://static.tildacdn.com/js/jquery-1.10.2.min.js"></script>'
+        '<a href="https://n1224963.yclients.com">Записаться</a>',
+        "https://studio.ru/",
+    )
+    check(tilda_booking.summary() == ["сайт на конструкторе"],
+          "конструктор с записью — сказать больше нечего")
 
     # …но конструктор конструктору рознь: uCoz — платформа нулевых, и это как
     # раз тот «старый сайт», ради которого ось и заводилась.
@@ -295,6 +318,83 @@ def test_tech_signals() -> None:
     )
     check(ucoz.legacy_builder and ucoz.outdated, "устаревший конструктор — кандидат на замену")
     check(not tilda.legacy_builder, "Tilda устаревшей не считается")
+
+
+def test_online_booking() -> None:
+    """Записью считается виджет, а не слово «Записаться».
+
+    На сайте салона кнопка «Записаться» ведёт в телеграм — по тексту такой сайт
+    выглядел бы как сайт с записью, хотя клиент там пишет администратору и ждёт.
+    """
+    print("\nонлайн-запись на сайте:")
+    from app.services.prospect_rules import needs_booking
+    from app.services.site_probe import _tech
+
+    widget = _tech('<a href="https://n1224963.yclients.com">Записаться</a>', "https://s.ru")
+    check(widget.booking, "виджет YCLIENTS — это запись")
+    check(_tech('<a href="https://dikidi.net/#widget=51285">Записаться</a>', "https://s.ru").booking,
+          "виджет DIKIDI — это запись")
+
+    fake = _tech('<a href="https://t.me/salon">Записаться</a>', "https://s.ru")
+    check(not fake.booking, "кнопка «Записаться» в телеграм записью не считается")
+    check(fake.booking_note() == ["на сайте нельзя записаться — только мессенджер или звонок"],
+          "формулировка про мессенджер")
+
+    only_form = _tech("<form action='/send'><input name='tel'></form>", "https://s.ru")
+    check(only_form.form and not only_form.booking, "форма — не запись")
+    check(only_form.booking_note() == ["на сайте только форма заявки, времени не выбрать"],
+          "форма описана отдельно")
+
+    check(needs_booking(Organization(name="Студия", categories=["Салон красоты"])),
+          "в салон записываются")
+    check(needs_booking(Organization(name="Стоматология Улыбка", categories=[])),
+          "в стоматологию записываются")
+    check(not needs_booking(Organization(name="Пятёрочка", categories=["Продукты"])),
+          "в магазин не записываются — правило его не трогает")
+
+    from app.services.site_probe import ProbeResult, TechSignals
+
+    v = ProspectVerdict(site="s", name="Салон", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v, ProbeResult(ok=True, status=200, text_len=5000), booking_matters=True
+    )
+    check(v.web == "maybe", "современный сайт без записи — «возможно», а не «не нужен»")
+
+    v = ProspectVerdict(site="m", name="Магазин", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v, ProbeResult(ok=True, status=200, text_len=5000), booking_matters=False
+    )
+    check(v.web == "skip", "магазину запись не нужна — вердикт не портим")
+
+    v = ProspectVerdict(site="b", name="Салон", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v,
+        ProbeResult(ok=True, status=200, text_len=5000, tech=TechSignals(booking=True)),
+        booking_matters=True,
+    )
+    check(v.web == "skip", "запись есть — переделывать нечего")
+
+    # Сайт салона на Tilda: переделывать нечего, но и записи нет — человек
+    # должен видеть, почему строка «возможно», а не гадать.
+    v = ProspectVerdict(site="t", name="Салон", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v,
+        ProbeResult(ok=True, status=200, text_len=5000, tech=TechSignals(builder=True)),
+        booking_matters=True,
+    )
+    check(v.web == "maybe", "конструктор без записи — «возможно»")
+    check(any("конструктор" in r for r in v.web_reasons)
+          and any("записаться" in r for r in v.web_reasons),
+          "названы обе причины: и конструктор, и отсутствие записи")
+
+    v = ProspectVerdict(site="t2", name="Магазин", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v,
+        ProbeResult(ok=True, status=200, text_len=5000, tech=TechSignals(builder=True)),
+        booking_matters=False,
+    )
+    check(not any("записаться" in r for r in v.web_reasons),
+          "магазину про запись не пишем")
 
 
 def test_web_axis() -> None:
@@ -468,6 +568,7 @@ async def main() -> None:
     test_card_sites_and_phones()
     test_several_sites()
     test_tech_signals()
+    test_online_booking()
     test_web_axis()
     test_chain_closes_both_axes()
     test_maps_url_parsing()
