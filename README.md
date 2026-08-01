@@ -67,6 +67,25 @@ npm install
 npm run dist         # собирает установщик .exe в release/
 ```
 
+Перед `npm run dist` нужно собрать бэкенд, иначе паковать нечего:
+
+```powershell
+cd ..\backend
+.\.venv\Scripts\Activate.ps1
+pyinstaller yascraper.spec
+```
+
+Браузер Playwright кладётся в сборку автоматически: `npm run dist` сначала
+запускает `scripts/prepare-browsers.mjs`, который находит свежую версию в
+`%LOCALAPPDATA%\ms-playwright` и копирует её туда, где её ждёт `run.py`.
+Ни PyInstaller, ни electron-builder браузеры сами не тащат — без этого шага
+установщик собирается на вид рабочим, а падает у пользователя на первом же
+поиске с «Please run playwright install».
+
+Кладётся только headless-версия (~270 МБ): приложение работает в headless.
+Если нужен и полный Chromium (ещё ~420 МБ, для `HEADLESS=false`) — соберите
+с `INCLUDE_FULL_CHROMIUM=1`.
+
 ## 🛠️ Использование
 
 Интерфейс разбит на три вкладки: **Поиск**, **История** и **Демо**.

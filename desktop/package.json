@@ -6,9 +6,10 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis --x64",
-    "dist:portable": "electron-builder --win portable --x64",
-    "pack": "electron-builder --dir --win --x64"
+    "dist": "npm run prepare-browsers && electron-builder --win nsis --x64",
+    "dist:portable": "npm run prepare-browsers && electron-builder --win portable --x64",
+    "pack": "npm run prepare-browsers && electron-builder --dir --win --x64",
+    "prepare-browsers": "node scripts/prepare-browsers.mjs"
   },
   "build": {
     "appId": "com.eni.yascraper",
@@ -26,19 +27,25 @@
       {
         "from": "resources/backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/frontend",
         "to": "frontend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",
