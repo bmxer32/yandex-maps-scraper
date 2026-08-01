@@ -160,6 +160,191 @@ def test_broken_model_answer() -> None:
     check(v.verdict == "годится", "JSON в блоке кода разбирается")
 
 
+def test_card_sites_and_phones() -> None:
+    """Карточка «Healthy Hair & Muse Beauty» — на ней мы и обожглись.
+
+    Рекламная карусель «Товары и услуги» лежит в HTML раньше блока контактов,
+    и её ссылка на страницу записи попадала в выгрузку вместо сайта. Компания
+    выглядела как «нормального сайта нет» — и ей пошли делать сайт, который
+    у неё был.
+    """
+    print("\nсайты и телефоны из карточки:")
+    from app.core.scraper.yandex_maps import _phones_from_card, _sites_from_card
+
+    html = (
+        '<a target="_blank" href="https://musebeauty.ru" class="card-special-offers-view__item">'
+        "<div>Наращивание волос</div></a>"
+        '<div class="business-urls-view__url">'
+        '<a itemprop="url" class="business-urls-view__link" href="http://healthyhairfamily.ru/">'
+        "<span>healthyhairfamily.ru</span></a></div>"
+        '<script>{"phones":[{"number":"+7 (966) 777-57-70","value":"+79667775770","info":"Москва"},'
+        '{"number":"+7 (988) 508-84-88","value":"+79885088488","info":"Сочи"}],'
+        '"urls":["http://healthyhairfamily.ru/","http://musebeauty.ru/"],'
+        '"socialLinks":[{"type":"telegram","href":"https://t.me/healthyhairfamily"}]}</script>'
+    )
+
+    sites = _sites_from_card(html)
+    check(sites and sites[0] == "http://healthyhairfamily.ru",
+          "главный сайт — настоящий, а не ссылка из рекламной карусели")
+    check(len(sites) == 2 and "http://musebeauty.ru" in sites,
+          "второй сайт не потерялся")
+
+    phones = _phones_from_card(html)
+    check(len(phones) == 2, "оба телефона на месте")
+    check(phones[0].endswith("(Москва)") and phones[1].endswith("(Сочи)"),
+          "город при каждом номере")
+
+    # Вёрстка без данных карточки — запасной путь по itemprop
+    only_markup = html.split("<script>")[0]
+    check(_sites_from_card(only_markup) == ["http://healthyhairfamily.ru"],
+          "без JSON берём блок контактов, а не карусель")
+
+    check(_sites_from_card("<a href='https://vk.com/x'>vk</a>") == [],
+          "соцсеть сайтом не считается")
+
+
+def test_several_sites() -> None:
+    """Несколько ссылок: судим по лучшей, а не по первой попавшейся."""
+    print("\nнесколько сайтов у компании:")
+    from app.services.prospect_rules import best_link
+
+    org = Organization(
+        name="Салон",
+        website="https://n123456.yclients.com",
+        websites=["https://n123456.yclients.com", "https://salon.ru"],
+        reviews_count=40,
+    )
+    kind, url = best_link(org)
+    check(kind == "own" and url == "https://salon.ru", "настоящий сайт важнее виджета записи")
+
+    base = evaluate(org)
+    check(base["demo"] == "auto", "демо соберётся: обходимый сайт есть")
+    check(base["web"] == "maybe", "не объявляем «нужен сайт» тому, у кого он есть")
+    check(any("ссылок несколько" in r for r in base["reasons"]), "перечислили все ссылки")
+
+    from app.services.site_probe import ProbeResult, TechSignals
+
+    v = ProspectVerdict(site="x", name="X", verdict="good", web="good", demo="auto")
+    prospect_service._apply_other_sites(
+        v, [("https://salon.ru", ProbeResult(ok=True, status=200, text_len=5000))]
+    )
+    check(v.web == "skip", "живой современный сайт во второй ссылке снимает ось")
+
+    v = ProspectVerdict(site="y", name="Y", verdict="good", web="good", demo="auto")
+    prospect_service._apply_other_sites(
+        v,
+        [("https://old.ru", ProbeResult(ok=True, status=200, text_len=5000,
+                                        tech=TechSignals(php_links=True, responsive=False)))],
+    )
+    check(v.web == "good", "вторая старая страница не снимает и не добавляет ничего")
+
+    # Модель не имеет права звать делать сайт тому, у кого он рабочий
+    v = ProspectVerdict(site="z", name="Z", verdict="good", web="skip", demo="auto")
+    prospect_service._apply_llm(
+        v,
+        site_verdict.Verdict(scale="одиночка", alive="живой", verdict="годится",
+                             web="годится", web_reason="сайт бедный"),
+        30,
+        live_site=True,
+    )
+    check(v.web == "maybe", "при живом сайте «годится» от модели — только «возможно»")
+
+
+def test_tech_signals() -> None:
+    """Признаки берутся из той же страницы, что уже скачана для оценки."""
+    print("\nпризнаки устаревшего сайта:")
+    from app.services.site_probe import _tech
+
+    old = _tech(
+        '<html><head></head><body><table><tr><td>меню</td></tr></table>'
+        '<a href="/index.php">Главная</a>'
+        '<script src="/js/jquery-1.8.3.min.js"></script></body></html>',
+        "http://old-site.ru/",
+    )
+    check(old.outdated, "старый стек распознан как устаревший")
+    check(not old.responsive, "нет viewport → не адаптивный")
+    check(old.no_tls, "http:// без TLS замечен")
+    check(old.jquery_old and old.jquery == "1.8", "старая версия jQuery найдена")
+    check(old.table_layout and old.php_links, "таблицы и .php замечены")
+
+    modern = _tech(
+        '<html><head><meta name="viewport" content="width=device-width">'
+        '<script src="/app.js" type="module"></script></head><body>ok</body></html>',
+        "https://new-site.ru/",
+    )
+    check(not modern.outdated, "современный сайт не помечен устаревшим")
+
+    # Tilda отдаёт jQuery 1.10 со своего CDN: по нему любой её сайт выглядел
+    # бы десятилетним, и вся выдача уехала бы в «редизайн» ложно.
+    tilda = _tech(
+        '<html><head></head><body>'
+        '<script src="https://static.tildacdn.com/js/jquery-1.10.2.min.js"></script>'
+        "</body></html>",
+        "https://studio.ru/",
+    )
+    check(tilda.builder, "конструктор распознан")
+    check(not tilda.outdated, "конструктор НЕ считается устаревшим — jQuery там платформенный")
+    check(tilda.summary() == ["сайт на конструкторе"], "у конструктора не перечисляем чужой стек")
+
+    # …но конструктор конструктору рознь: uCoz — платформа нулевых, и это как
+    # раз тот «старый сайт», ради которого ось и заводилась.
+    ucoz = _tech(
+        '<html><head><meta name="viewport" content="width=device-width"></head>'
+        '<body><script src="//s.ucoz.net/src/uwnd.min.js"></script></body></html>',
+        "https://salon.ucoz.ru/",
+    )
+    check(ucoz.legacy_builder and ucoz.outdated, "устаревший конструктор — кандидат на замену")
+    check(not tilda.legacy_builder, "Tilda устаревшей не считается")
+
+
+def test_web_axis() -> None:
+    """Вторая ось живёт отдельно от первой: нет сайта — плохо для демо, но это лучший клиент."""
+    print("\nось «сайт»:")
+    check(evaluate(Organization(name="A", website=None))["web"] == "good",
+          "сайта нет → лучший клиент на создание")
+    check(evaluate(Organization(name="B", website="https://vk.ru/x"))["web"] == "good",
+          "соцсеть вместо сайта → тоже цель")
+    check(evaluate(Organization(name="C", website="https://x.tilda.ws"))["web"] == "maybe",
+          "конструктор → сомнительно, а не цель")
+    check(evaluate(Organization(name="D", website="https://salon.ucoz.ru"))["web"] == "good",
+          "устаревший конструктор → цель на замену")
+
+    from app.services.site_probe import ProbeResult, TechSignals
+
+    v = ProspectVerdict(site="x", name="X", verdict="good", demo="auto")
+    prospect_service._apply_probe(
+        v, ProbeResult(ok=True, status=200, text_len=5000,
+                       tech=TechSignals(responsive=False, php_links=True))
+    )
+    check(v.web == "good", "устаревший стек → «нужен сайт»")
+
+    v = ProspectVerdict(site="y", name="Y", verdict="good", demo="auto")
+    prospect_service._apply_probe(v, ProbeResult(ok=True, status=200, text_len=5000))
+    check(v.web == "skip", "современный сайт → переделывать нечего")
+
+    v = ProspectVerdict(site="z", name="Z", verdict="good", demo="auto")
+    prospect_service._apply_probe(v, ProbeResult(ok=False, error="ConnectError"))
+    check(v.web == "good", "сайт не отвечает → повод обратиться")
+
+
+def test_chain_closes_both_axes() -> None:
+    """Ровно тот случай, из-за которого 4hands висел среди приоритетных."""
+    print("\nсеть закрывает обе оси:")
+    v = ProspectVerdict(site="x", name="4hands", verdict="good", web="good", demo="manual")
+    prospect_service._apply_llm(
+        v,
+        site_verdict.Verdict(scale="франшиза", alive="живой", verdict="мимо",
+                             reason="федеральная сеть", web="мимо", web_reason="сайт централизован"),
+        33,
+    )
+    check(v.verdict == "skip", "ассистент — мимо")
+    check(v.web == "skip", "сайт — тоже мимо")
+
+    v = ProspectVerdict(site="y", name="Одиночка", verdict="good", web="good", demo="auto")
+    prospect_service._apply_llm(v, site_verdict.Verdict(error="лимит запросов к модели исчерпан"), 10)
+    check(v.verdict == "good" and v.web == "good", "молчание модели не понижает ни одну ось")
+
+
 def test_maps_url_parsing() -> None:
     """Ссылку на карточку надо открывать напрямую: поиск по ней ничего не даёт."""
     print("\nразбор ссылок на Яндекс.Карты:")
@@ -280,6 +465,11 @@ async def main() -> None:
     test_year_only_from_copyright()
     test_llm_can_skip_but_reviews_protect()
     test_broken_model_answer()
+    test_card_sites_and_phones()
+    test_several_sites()
+    test_tech_signals()
+    test_web_axis()
+    test_chain_closes_both_axes()
     test_maps_url_parsing()
     test_social_links()
     await test_provider_chain()

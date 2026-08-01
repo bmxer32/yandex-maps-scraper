@@ -39,6 +39,8 @@ _BUILDER = re.compile(
     r"|umi\.ru|a5\.ru|ucoz\.\w+|jimdosite\.com)$",
     re.IGNORECASE,
 )
+# Из них — платформы нулевых: сайт на них устарел сам по себе.
+_BUILDER_LEGACY = re.compile(r"(^|\.)(nethouse\.ru|umi\.ru|a5\.ru|ucoz\.\w+)$", re.IGNORECASE)
 
 LINK_OWN = "own"
 LINK_SOCIAL = "social"
@@ -77,6 +79,30 @@ def site_key(url: Optional[str]) -> str:
     host = urlparse(raw if "//" in raw else f"//{raw}").netloc or raw
     host = host.split("@")[-1].split(":")[0]
     return host[4:] if host.startswith("www.") else host
+
+
+def all_sites(org: Organization) -> list[str]:
+    """Все ссылки компании из поля «сайт», первая — главная."""
+    if org.websites:
+        return [u for u in org.websites if u]
+    return [org.website] if org.website else []
+
+
+def best_link(org: Organization) -> tuple[str, Optional[str]]:
+    """Лучшая из ссылок компании и её тип.
+
+    Ссылок бывает несколько: настоящий сайт и рядом страница онлайн-записи.
+    Судить по первой попавшейся нельзя — иначе компания с нормальным сайтом
+    выглядит как та, у кого «вместо сайта виджет записи», и мы идём предлагать
+    ей то, что у неё уже есть.
+    """
+    rank = {LINK_OWN: 0, LINK_BUILDER: 1, LINK_BOOKING: 2, LINK_SOCIAL: 3, LINK_NONE: 4}
+    best: tuple[int, str, Optional[str]] = (99, LINK_NONE, None)
+    for url in all_sites(org):
+        kind = classify_link(url)
+        if rank[kind] < best[0]:
+            best = (rank[kind], kind, url)
+    return best[1], best[2]
 
 
 def classify_link(url: Optional[str]) -> str:
@@ -142,12 +168,16 @@ def evaluate(
     Возвращает заготовку вердикта. Ступени 2 и 3 её уточняют, но понизить
     до «мимо» может только явная причина — не догадка.
     """
-    kind = classify_link(org.website)
+    kind, main_url = best_link(org)
     reasons: list[str] = []
 
     demo = DEMO_AUTO if kind == LINK_OWN else DEMO_MANUAL
     if kind != LINK_OWN:
         reasons.append(_LINK_LABELS[kind])
+
+    sites = all_sites(org)
+    if len(sites) > 1:
+        reasons.append(f"ссылок несколько: {', '.join(site_key(u) for u in sites)}")
 
     # Осознанно не понижаем вердикт из-за отсутствия сайта: это довод в пользу
     # клиента, а не против него. Меняется только способ подачи демо.
@@ -171,10 +201,38 @@ def evaluate(
     if has_messenger(org):
         reasons.append("есть мессенджер для связи")
 
+    # --- Вторая ось: сделать или переделать сайт ---
+    # Признаки стека появятся на второй ступени; здесь только то, что видно
+    # из поля «сайт». Отсутствие сайта — не недостаток клиента, а повод:
+    # продать первый сайт проще, чем замену рабочему.
+    web_reasons: list[str] = []
+    if kind == LINK_NONE:
+        web = VERDICT_GOOD
+        web_reasons.append("сайта нет — можно сделать с нуля")
+    elif kind in (LINK_SOCIAL, LINK_BOOKING):
+        web = VERDICT_GOOD
+        web_reasons.append(
+            "вместо сайта соцсеть" if kind == LINK_SOCIAL else "вместо сайта виджет записи"
+        )
+    elif kind == LINK_BUILDER:
+        # uCoz и Nethouse — платформы нулевых: там менять есть что.
+        # Tilda и Wix отдают живой адаптивный сайт, это только «возможно».
+        if _BUILDER_LEGACY.search(site_key(main_url)):
+            web = VERDICT_GOOD
+            web_reasons.append("сайт на устаревшем конструкторе")
+        else:
+            web = VERDICT_MAYBE
+            web_reasons.append("сайт на конструкторе — рабочий, но простой")
+    else:
+        # Свой сайт: решает вторая ступень, до неё судить не о чем.
+        web = VERDICT_MAYBE
+
     return {
         "link_kind": kind,
         "demo": demo,
         "verdict": verdict,
         "reasons": reasons,
+        "web": web,
+        "web_reasons": web_reasons,
         "duplicate_of": duplicate_of,
     }

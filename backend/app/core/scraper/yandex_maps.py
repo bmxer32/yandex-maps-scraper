@@ -637,45 +637,112 @@ def _chunk_to_organization(chunk: str, oid: str) -> Optional[Organization]:
     )
 
 
+# Домены, которые не могут быть сайтом организации.
+_CARD_NON_SITE = (
+    "yandex.", "ya.ru", "yastatic", "avatars.mds", "clck",
+    "passport", "metrika", "mc.yandex", "an.yandex", "adsystem",
+    "static-mon", "surveys.yandex", "bing.com", "google.com",
+    "apple.com", "maps.yandex", "appmetrica",
+)
+_CARD_SOCIAL_DOMAINS = (
+    "vk.com", "vkontakte.ru", "t.me", "telegram.me", "ok.ru",
+    "odnoklassniki.ru", "instagram.com", "facebook.com", "fb.com",
+    "wa.me", "whatsapp.com", "youtube.com", "youtu.be", "tiktok.com",
+    "dzen.ru", "viber.com",
+)
+
+
+def _phones_from_card(html: str) -> list[str]:
+    """Все телефоны карточки с пометкой города: «+7 (988) 508-84-88 (Сочи)».
+
+    У салона в Сочи первым идёт московский номер, вторым местный. Какой из
+    них «главный» — вопрос спорный, поэтому показываем оба и не решаем за
+    человека.
+    """
+    m = re.search(r'"phones"\s*:\s*\[(.*?)\]', html, re.DOTALL)
+    if not m:
+        return []
+    out: list[str] = []
+    for raw in re.finditer(r"\{(.*?)\}", m.group(1), re.DOTALL):
+        chunk = raw.group(1)
+        number = _re_first(chunk, r'"number"\s*:\s*"([^"]+)"') \
+            or _re_first(chunk, r'"value"\s*:\s*"([^"]+)"')
+        if not number:
+            continue
+        info = _re_first(chunk, r'"info"\s*:\s*"([^"]+)"')
+        label = f"{number} ({info})" if info else number
+        if label not in out:
+            out.append(label)
+    return out
+
+
+def _sites_from_card(html: str) -> list[str]:
+    """Сайты организации из карточки — по порядку, первый главный.
+
+    Три источника по убыванию надёжности:
+
+    1. Поле `"urls":[...]` в данных карточки — сама Яндекс-карточка, порядок её.
+    2. Блок контактов в вёрстке: `<a itemprop="url" class="business-urls-view__link">`.
+    3. Ничего из этого не нашлось — пусто. Раньше здесь была «первая ссылка,
+       не Яндекс и не соцсеть», и это стоило нам клиента: у салона в Сочи
+       рекламная карусель «Товары и услуги» лежит в HTML **раньше** контактов,
+       её ссылки ведут на страницу записи (`actionButtons: Записаться`), и
+       именно она попадала в выгрузку вместо настоящего сайта. Компания
+       выглядела как «сайта нормального нет» — а сайт у неё был.
+    """
+    out: list[str] = []
+
+    def add(url: str) -> None:
+        clean = re.sub(r"[?&#].*$", "", url.replace("&amp;", "&")).rstrip("/")
+        host = re.sub(r"^https?://(www\.)?", "", clean).split("/")[0].lower()
+        if not host or any(bad in host for bad in _CARD_NON_SITE):
+            return
+        if any(soc in host for soc in _CARD_SOCIAL_DOMAINS):
+            return
+        if host.endswith((".png", ".jpg", ".svg")):
+            return
+        if clean not in out:
+            out.append(clean)
+
+    for m in re.finditer(r'"urls"\s*:\s*\[([^\]]*)\]', html):
+        chunk = m.group(1)
+        # Рядом лежит служебный "urls" со шрифтами — он объект, не список строк.
+        for u in re.findall(r'"(https?://[^"]+)"', chunk):
+            add(u)
+        if out:
+            return out
+
+    for m in re.finditer(
+        r'<a[^>]+itemprop="url"[^>]+href="(https?://[^"]+)"', html
+    ):
+        add(m.group(1))
+
+    return out
+
+
 def _enrich_from_card_html(org: Organization, html: str) -> None:
     """
     Из SSR-HTML карточки организации достаём сайт, email, соцсети, телефон.
-    Карточка содержит обычные <a href> ссылки: сайт организации — первая
-    ссылка, которая НЕ ведёт на Яндекс/метрику/соцсеть.
     """
-    # Домены, которые НЕ являются сайтом организации
-    _NON_SITE = (
-        "yandex.", "ya.ru", "yastatic", "avatars.mds", "clck",
-        "passport", "metrika", "mc.yandex", "an.yandex", "adsystem",
-        "static-mon", "surveys.yandex", "bing.com", "google.com",
-        "apple.com", "maps.yandex",
-    )
-    _SOCIAL_DOMAINS = (
-        "vk.com", "vkontakte.ru", "t.me", "telegram.me", "ok.ru",
-        "odnoklassniki.ru", "instagram.com", "facebook.com", "fb.com",
-        "wa.me", "whatsapp.com", "youtube.com", "youtu.be", "tiktok.com",
-        "dzen.ru", "viber.com",
-    )
+    _NON_SITE = _CARD_NON_SITE
+    _SOCIAL_DOMAINS = _CARD_SOCIAL_DOMAINS
 
     # --- Собираем все ссылки в карточке ---
     all_links = re.findall(r'href="(https?://[^"\s<>]+)"', html)
 
-    if not org.website:
-        # Сайт = первая ссылка, не Яндекс/метрика/соцсеть/почта
-        for href in all_links:
-            host = re.sub(r"^https?://(www\.)?", "", href).split("/")[0].lower()
-            if any(bad in host for bad in _NON_SITE):
-                continue
-            if any(soc in host for bad in _SOCIAL_DOMAINS for soc in [bad] if bad in host):
-                continue
-            if host.endswith(".png") or host.endswith(".jpg"):
-                continue
-            # Чистим UTM-мусор и Яндекс-трекинг из query
-            clean = re.sub(r"[?&#].*$", "", href)
-            # Декодируем HTML-сущности
-            clean = clean.replace("&amp;", "&")
-            org.website = clean
-            break
+    if not org.websites:
+        sites = _sites_from_card(html)
+        if sites:
+            org.websites = sites
+            org.website = sites[0]
+
+    phones = _phones_from_card(html)
+    if phones and not org.phones:
+        org.phones = phones
+        # Тот, что уже стоит, оставляем: он пришёл из выдачи и совпадает с
+        # первым номером карточки. Пустой — берём первый.
+        if not org.phone:
+            org.phone = phones[0].split(" (")[0]
 
     if not org.email:
         # email — ищем в mailto, потом в тексте (с блэклистом Яндекса/CDN)

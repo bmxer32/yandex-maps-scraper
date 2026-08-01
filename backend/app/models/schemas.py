@@ -66,7 +66,14 @@ class Organization(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
     phone: Optional[str] = None
+    # Все телефоны карточки, с городом: «+7 (988) 508-84-88 (Сочи)». У сетевых
+    # салонов первым идёт московский номер, а звонить нужно в местный.
+    phones: list[str] = Field(default_factory=list)
     website: Optional[str] = None         # None => сайта нет (важный кейс для UI)
+    # Все сайты компании в порядке карточки. Их бывает несколько, и решать
+    # «нужен ли сайт» по одному нельзя: у салона может быть нормальный сайт
+    # и вторая ссылка на страницу записи.
+    websites: list[str] = Field(default_factory=list)
     email: Optional[str] = None
     socials: list[str] = Field(default_factory=list)  # vk, telegram, instagram...
     hours: Optional[str] = None

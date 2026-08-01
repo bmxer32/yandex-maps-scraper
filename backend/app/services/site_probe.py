@@ -46,6 +46,88 @@ _CHAIN = re.compile(
     re.IGNORECASE,
 )
 
+# --- Признаки того, что сайт пора переделывать -----------------------------
+# Достаются из той же страницы, что уже скачана для оценки: отдельных запросов
+# не нужно. На реальных сайтах из выгрузок это ловится уверенно — jQuery 1.10
+# (это 2013 год), ссылки на .php, работа без TLS.
+_VIEWPORT = re.compile(r"<meta[^>]+name=[\"']viewport", re.IGNORECASE)
+_PHP_LINKS = re.compile(r"\.php[\"'?]", re.IGNORECASE)
+_TABLE_LAYOUT = re.compile(r"<table[^>]*>\s*<tr", re.IGNORECASE)
+_JQUERY = re.compile(r"jquery[.\-/]?(\d+)\.(\d+)", re.IGNORECASE)
+_GENERATOR = re.compile(
+    r"<meta[^>]+name=[\"']generator[\"'][^>]+content=[\"']([^\"']+)", re.IGNORECASE
+)
+# Конструкторы ищем по служебным доменам, а не по слову в тексте: «wix» может
+# оказаться внутри обычного слова и записать живой сайт в конструкторы.
+_BUILDER = re.compile(
+    r"(tilda(cdn)?\.(ws|com|cc)|static\.tildacdn|wixstatic\.com|parastorage\.com"
+    r"|nethouse\.ru|u-?coz\.(ru|net)|s\.ucoz|a5\.ru|readymag|craftum)",
+    re.IGNORECASE,
+)
+# Конструктор конструктору рознь. Tilda и Wix отдают живой адаптивный сайт —
+# менять там нечего. uCoz, Nethouse и a5 — платформы нулевых, и вот это как раз
+# кандидат на замену: ровно тот «старый сайт», который мы ищем.
+_BUILDER_LEGACY = re.compile(r"(nethouse\.ru|u-?coz\.(ru|net)|s\.ucoz|a5\.ru)", re.IGNORECASE)
+
+
+@dataclass
+class TechSignals:
+    """На чём сделан сайт — для оси «редизайн/создание сайта»."""
+
+    responsive: bool = True          # есть <meta viewport>
+    php_links: bool = False
+    table_layout: bool = False
+    jquery: Optional[str] = None     # версия, если нашлась
+    jquery_old: bool = False         # ниже 3.x
+    generator: Optional[str] = None  # CMS из <meta generator>
+    builder: bool = False            # Tilda, Wix, uCoz и подобное
+    legacy_builder: bool = False     # платформа нулевых: uCoz, Nethouse, a5
+    no_tls: bool = False
+
+    def summary(self) -> list[str]:
+        """Человеческие формулировки — идут и в подсказку, и в промпт модели."""
+        if self.legacy_builder:
+            return ["сайт на устаревшем конструкторе (uCoz, Nethouse и подобные)"]
+        if self.builder:
+            # У современного конструктора весь стек свой, обсуждать его нечего.
+            return ["сайт на конструкторе"]
+
+        out: list[str] = []
+        if not self.responsive:
+            out.append("нет мобильной вёрстки")
+        if self.no_tls:
+            out.append("работает без HTTPS")
+        if self.jquery_old:
+            out.append(f"jQuery {self.jquery} — библиотека десятилетней давности")
+        if self.table_layout:
+            out.append("вёрстка таблицами")
+        if self.php_links:
+            out.append("ссылки на .php")
+        if self.generator:
+            out.append(f"CMS: {self.generator}")
+        return out
+
+    @property
+    def outdated(self) -> bool:
+        """Явно устаревший стек — кандидат на редизайн.
+
+        На современном конструкторе признаки стека ничего не значат: Tilda сама
+        отдаёт jQuery 1.10 со своего CDN, и по нему любой её сайт выглядел бы
+        десятилетним. Такие идут отдельной, более мягкой пометкой. А вот
+        платформа нулевых устарела сама по себе — тут признаки не нужны.
+        """
+        if self.legacy_builder:
+            return True
+        if self.builder:
+            return False
+        return (
+            not self.responsive
+            or self.no_tls
+            or self.jquery_old
+            or self.table_layout
+            or self.php_links
+        )
+
 
 @dataclass
 class ProbeResult:
@@ -58,7 +140,30 @@ class ProbeResult:
     text_len: int = 0
     last_year: Optional[int] = None
     chain_hint: bool = False
+    tech: TechSignals = field(default_factory=TechSignals)
     reasons: list[str] = field(default_factory=list)
+
+
+def _tech(html: str, url: str) -> TechSignals:
+    """Разобрать сырой HTML на признаки стека. Тот же проход, без новых запросов."""
+    t = TechSignals()
+    t.responsive = bool(_VIEWPORT.search(html))
+    t.php_links = bool(_PHP_LINKS.search(html))
+    t.table_layout = bool(_TABLE_LAYOUT.search(html))
+    t.builder = bool(_BUILDER.search(html))
+    t.legacy_builder = bool(_BUILDER_LEGACY.search(html))
+    t.no_tls = url.lower().startswith("http://")
+
+    m = _JQUERY.search(html)
+    if m:
+        major, minor = int(m.group(1)), int(m.group(2))
+        t.jquery = f"{major}.{minor}"
+        t.jquery_old = major < 3
+
+    g = _GENERATOR.search(html)
+    if g:
+        t.generator = g.group(1).strip()[:60]
+    return t
 
 
 def _analyze(html: str) -> tuple[str, Optional[int], bool]:
@@ -96,12 +201,16 @@ async def probe_site(client: httpx.AsyncClient, url: str, *, timeout: float = 12
             res.reasons.append(f"сайт отвечает ошибкой {resp.status_code}")
         return res
 
-    text, last_year, chain = _analyze(resp.text[:400_000])
+    html = resp.text[:400_000]
+    text, last_year, chain = _analyze(html)
     res.ok = True
     res.text = text
     res.text_len = len(text)
     res.last_year = last_year
     res.chain_hint = chain
+    # Итоговый адрес, а не исходный: сайт мог увести с http на https.
+    res.tech = _tech(html, str(resp.url))
+    res.reasons.extend(res.tech.summary())
 
     if res.text_len < 400:
         res.reasons.append("на главной почти нет текста — скорее всего, рисуется скриптами")
