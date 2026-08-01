@@ -15,6 +15,12 @@ export interface GeoNode {
 
 export interface SearchRequest {
   category: string;
+  /**
+   * Точечный поиск: название, адрес, телефон или ссылка на карточку в
+   * Яндекс.Картах. Задан — гео и рубрика не используются, запрос уходит
+   * как есть.
+   */
+  raw_query?: string | null;
   country_id?: string;
   region_id?: string | null;
   city_id?: string | null;
@@ -91,6 +97,121 @@ export const STAGE_ORDER: TaskStage[] = [
 
 export function isFinalStage(stage: TaskStage): boolean {
   return stage === "done" || stage === "failed" || stage === "cancelled";
+}
+
+/* ------------------------------------------------------------------ */
+/* История выгрузок                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Строка списка недавних выгрузок — без самих организаций. */
+export interface HistoryRun {
+  task_id: string;
+  category: string;
+  location: string;
+  found_count: number;
+  with_website: number;
+  created_at: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Отбор клиентов                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Что лежит в поле «сайт»: свой сайт, соцсеть, виджет записи, конструктор. */
+export type LinkKind = "own" | "social" | "booking" | "builder" | "none";
+
+/**
+ * Две независимые оси, их нельзя смешивать.
+ * `demo`   — соберём ли базу знаний автоматом (нужен обходимый сайт);
+ * `verdict` — стоит ли вообще писать этой компании.
+ * У школы с одной страницей ВКонтакте demo="manual" и при этом verdict="good".
+ */
+export type DemoFitness = "auto" | "manual";
+export type VerdictState = "good" | "maybe" | "skip";
+
+export interface ProspectVerdict {
+  site: string;
+  name: string | null;
+  website: string | null;
+  link_kind: LinkKind;
+  demo: DemoFitness;
+  verdict: VerdictState;
+  reasons: string[];
+  duplicate_of: string | null;
+  http_status: number | null;
+  text_len: number | null;
+  last_year: number | null;
+  scale: string | null;
+  alive: string | null;
+  checked_at: string | null;
+}
+
+export interface ScanResult {
+  items: ProspectVerdict[];
+  classified: number;
+  llm_enabled: boolean;
+  quota_hit: number;
+}
+
+export const VERDICT_LABELS: Record<VerdictState, string> = {
+  good: "Годится",
+  maybe: "Сомнительно",
+  skip: "Мимо",
+};
+
+/* ------------------------------------------------------------------ */
+/* Персональные демо ИИ-ассистента (интеграция с kb_assistant)          */
+/* ------------------------------------------------------------------ */
+
+export interface DemoConfig {
+  /** Адрес и ключ kb_assistant заданы — колонку «Демо» вообще показываем. */
+  enabled: boolean;
+  /** kb_assistant уже отвечает. Docker-стек поднимается около минуты. */
+  ready: boolean;
+  bot_username: string | null;
+  max_pages: number;
+}
+
+/**
+ * "pending" / "crawling" — база знаний ещё собирается,
+ * "ready" — ссылку можно отправлять клиенту,
+ * "thin" — собралось, но отвечать нечем: сайт отдал в основном служебные
+ *          страницы. Ссылка рабочая, но клиенту такое слать нельзя,
+ * "failed" — сайт не удалось прокраулить,
+ * "error" — сбой обращения к kb_assistant (не статус самого демо).
+ */
+export type DemoState =
+  | "pending"
+  | "crawling"
+  | "ready"
+  | "thin"
+  | "failed"
+  | "error";
+
+export interface DemoStatus {
+  name: string | null;
+  website: string | null;
+  slug: string;
+  link: string | null;
+  status: DemoState;
+  error: string | null;
+  pages_indexed: number;
+  opened_count: number;
+  message_count: number;
+}
+
+export const DEMO_STATE_LABELS: Record<DemoState, string> = {
+  pending: "В очереди",
+  crawling: "Собираю сайт",
+  ready: "Готово",
+  thin: "Мало данных",
+  failed: "Не вышло",
+  error: "Ошибка связи",
+};
+
+/** Демо ещё в работе — таблица продолжает опрашивать статус. */
+export function isDemoPending(status: DemoState): boolean {
+  return status === "pending" || status === "crawling";
 }
 
 export function isErrorStage(stage: TaskStage): boolean {

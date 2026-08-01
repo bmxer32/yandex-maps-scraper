@@ -79,6 +79,13 @@ class TaskManager:
                                   f"Ошибка: {e}", error=str(e))
         else:
             await self._set_stage(task_id, TaskStage.DONE, "Готово")
+            # Складываем результат в историю: сами задачи живут в памяти, и
+            # без этого перезапуск программы означал бы парсить заново.
+            result = self.get_result(task_id)
+            if result is not None:
+                from .history_service import save_run
+
+                await save_run(result)
 
     async def cancel(self, task_id: str) -> bool:
         state = self._get(task_id)

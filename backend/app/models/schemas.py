@@ -38,6 +38,11 @@ class GeoNode(BaseModel):
 class SearchRequest(BaseModel):
     """Входная форма с UI."""
     category: str = Field(..., description="Сфера/рубрика: 'стоматологии', 'автосервисы'")
+    # Точечный поиск: название, адрес, телефон или ссылка на карточку в
+    # Яндекс.Картах. Задан — гео и рубрика не используются, запрос уходит
+    # как есть. Нужен, когда клиент уже известен и надо просто добавить его
+    # в список, а не собирать всю нишу целиком.
+    raw_query: Optional[str] = Field(None, description="Точечный поиск по тексту или ссылке")
     country_id: str = Field("ru", description="Страна, по умолчанию Россия")
     region_id: Optional[str] = Field(None, description="Область / край")
     city_id: Optional[str] = Field(None, description="Город")

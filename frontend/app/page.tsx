@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Map, Database, Github, Zap } from "lucide-react";
+import { Map, Bot, Clock, Database, Github, Zap } from "lucide-react";
 import type { GeoNode, SearchRequest, TaskProgress, TaskResult } from "@/lib/types";
 import {
   cancelTask,
@@ -11,12 +11,23 @@ import {
   subscribeProgress,
 } from "@/lib/api";
 import { isFinalStage } from "@/lib/types";
+import { useDemos } from "@/lib/useDemos";
+import { cn } from "@/lib/utils";
 import { SearchForm } from "@/components/SearchForm";
 import { ProgressView } from "@/components/ProgressView";
 import { ResultsTable } from "@/components/ResultsTable";
+import { DemosPanel } from "@/components/DemosPanel";
+import { HistoryPanel } from "@/components/HistoryPanel";
 import { Skeleton, Toast } from "@/components/ui";
 
+type Tab = "search" | "history" | "demos";
+
 export default function Home() {
+  const [tab, setTab] = useState<Tab>("search");
+  // Одно состояние демо на всё приложение: таблица результатов и раздел
+  // «Демо» должны видеть одни и те же данные, иначе удаление в одном месте
+  // не отражается в другом.
+  const demos = useDemos();
   const [geoTree, setGeoTree] = useState<GeoNode[]>([]);
   const [geoLoading, setGeoLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -26,6 +37,7 @@ export default function Home() {
   const [toast, setToast] = useState<{ msg: string; variant?: "default" | "destructive" } | null>(null);
 
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const demoCount = Object.keys(demos.demos).length;
 
   // Загрузка гео-дерева один раз
   useEffect(() => {
@@ -94,7 +106,7 @@ export default function Home() {
     <main className="min-h-screen">
       {/* Шапка */}
       <header className="sticky top-0 z-30 glass">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1700px] items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
             <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
               <Map className="h-5 w-5" />
@@ -112,6 +124,34 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Вкладки: сбор данных и управление разосланными демо */}
+            <div className="flex rounded-md border border-border p-0.5">
+              {([
+                { id: "search" as Tab, label: "Поиск", icon: Map },
+                { id: "history" as Tab, label: "История", icon: Clock },
+                { id: "demos" as Tab, label: "Демо", icon: Bot },
+              ]).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors",
+                    tab === id
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                  {id === "demos" && demoCount > 0 && (
+                    <span className="ml-0.5 rounded-full bg-background/30 px-1.5 text-[10px]">
+                      {demoCount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
             <a
               href="http://127.0.0.1:8000/docs"
               target="_blank"
@@ -123,16 +163,48 @@ export default function Home() {
             </a>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/30 px-2.5 py-1 text-[11px] text-muted-foreground">
               <Zap className="h-3 w-3 text-primary" />
-              v0.1
+              v0.2
             </span>
           </div>
         </div>
       </header>
 
       {/* Контент */}
-      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-[1700px] space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        {tab === "history" && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-start gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">История выгрузок</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Собранное сохраняется автоматически. Откройте любую выгрузку —
+                она загрузится целиком, без повторного парсинга Яндекс.Карт.
+              </p>
+            </div>
+            <HistoryPanel
+              onOpen={(res) => {
+                setResult(res);
+                setProgress(null);
+                setTab("search");
+              }}
+            />
+          </div>
+        )}
+
+        {tab === "demos" && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-start gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">Разосланные демо</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Кто открыл ссылку и сколько вопросов задал. «Мало данных» — сайт
+                отдал в основном служебные страницы, такое демо клиенту слать рано.
+              </p>
+            </div>
+            <DemosPanel demos={demos} />
+          </div>
+        )}
+
         {/* Hero — только когда ничего ещё не запущено */}
-        {!progress && !result && (
+        {tab === "search" && !progress && !result && (
           <div className="mb-2 flex flex-col items-start gap-2">
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
               Сбор данных с Яндекс.Карт
@@ -145,7 +217,7 @@ export default function Home() {
         )}
 
         {/* Форма (скрыта во время активного парсинга, но видна с результатами) */}
-        {(!progress || isFinalStage(progress.stage)) && (
+        {tab === "search" && (!progress || isFinalStage(progress.stage)) && (
           geoLoading ? (
             <Skeleton className="h-[420px] w-full" />
           ) : (
@@ -159,7 +231,7 @@ export default function Home() {
         )}
 
         {/* Прогресс */}
-        {progress && (
+        {tab === "search" && progress && (
           <ProgressView
             progress={progress}
             onCancel={handleCancel}
@@ -168,7 +240,7 @@ export default function Home() {
         )}
 
         {/* Результаты */}
-        {result && result.organizations.length > 0 && (
+        {tab === "search" && result && result.organizations.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-semibold">Результаты</h2>
@@ -179,6 +251,7 @@ export default function Home() {
             <ResultsTable
               organizations={result.organizations}
               taskId={result.task_id}
+              demos={demos}
             />
           </div>
         )}

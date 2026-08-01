@@ -23,6 +23,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..core.geo import get_geo_tree
 from ..models.schemas import SearchRequest, TaskStage
+from ..services import history_service
 from ..services.search_service import run_search_pipeline
 from ..services.task_manager import task_manager
 
@@ -68,8 +69,39 @@ async def list_tasks():
 async def task_detail(task_id: str):
     result = task_manager.get_result(task_id)
     if result is None:
+        # Задачи живут в памяти: после перезапуска программы их там нет,
+        # но завершённая выгрузка осталась в истории.
+        result = await history_service.load_run(task_id)
+    if result is None:
         raise HTTPException(status_code=404, detail="task not found")
     return result.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# История выгрузок
+# ---------------------------------------------------------------------------
+@router.get("/history")
+async def history_list():
+    """Недавние выгрузки — чтобы вернуться к ним, а не собирать заново."""
+    return [
+        {**r, "created_at": r["created_at"].isoformat()}
+        for r in await history_service.list_runs()
+    ]
+
+
+@router.get("/history/{task_id}")
+async def history_detail(task_id: str):
+    """Открыть сохранённую выгрузку целиком."""
+    result = await history_service.load_run(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="выгрузка не найдена")
+    return result.model_dump(mode="json")
+
+
+@router.delete("/history/{task_id}", status_code=204)
+async def history_delete(task_id: str) -> None:
+    if not await history_service.delete_run(task_id):
+        raise HTTPException(status_code=404, detail="выгрузка не найдена")
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +166,10 @@ async def export_task(
 ):
     """Выгрузка результата в xlsx или csv."""
     result = task_manager.get_result(task_id)
+    if result is None:
+        # Скачать Excel по выгрузке из истории — тот же сценарий, что и
+        # открыть её в таблице: задачи в памяти не переживают перезапуск.
+        result = await history_service.load_run(task_id)
     if result is None:
         raise HTTPException(status_code=404, detail="task not found")
 

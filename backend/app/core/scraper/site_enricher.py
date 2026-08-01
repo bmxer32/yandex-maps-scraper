@@ -20,6 +20,7 @@ from loguru import logger
 from lxml import html as lxml_html
 
 from ...config import settings
+from .socials import normalize_all
 from ...models.schemas import Organization, TaskStage
 
 
@@ -161,7 +162,7 @@ async def _enrich_one(client: httpx.AsyncClient, org: Organization) -> None:
                     socials.add(f"{label}: {full}")
                     break
         if socials:
-            org.socials = sorted(socials)
+            org.socials = normalize_all(sorted(socials))
 
 
 def _normalize_url(raw: str) -> Optional[str]:

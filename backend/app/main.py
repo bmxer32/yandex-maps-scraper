@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+from .api.demos import router as demos_router
+from .api.prospects import router as prospects_router
 from .api.search import router as scraper_router
 from .config import settings
 from .core.db import init_db
@@ -31,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Yandex Maps Scraper",
     description="Сбор данных с Яндекс.Карт: сфера, контакты, сайты, email.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -46,6 +48,8 @@ app.add_middleware(
 )
 
 app.include_router(scraper_router)
+app.include_router(demos_router)
+app.include_router(prospects_router)
 
 
 @app.get("/health")

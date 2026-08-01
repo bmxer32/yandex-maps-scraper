@@ -3,7 +3,12 @@
  * Все URL берутся из NEXT_PUBLIC_API_URL (по умолчанию http://127.0.0.1:8000).
  */
 import type {
+  DemoConfig,
+  DemoStatus,
   GeoNode,
+  HistoryRun,
+  ProspectVerdict,
+  ScanResult,
   SearchRequest,
   TaskProgress,
   TaskResult,
@@ -61,6 +66,116 @@ export function exportUrl(
   const params = new URLSearchParams({ fmt });
   if (onlyWithWebsite) params.set("only_with_website", "true");
   return `${API_URL}/api/export/${taskId}?${params.toString()}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* История выгрузок                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Недавние выгрузки — задачи живут в памяти и перезапуск их не переживает. */
+export async function listHistory(): Promise<HistoryRun[]> {
+  const resp = await fetch(`${API_URL}/api/history`, { cache: "no-store" });
+  return handle<HistoryRun[]>(resp);
+}
+
+/** Открыть сохранённую выгрузку целиком, без повторного парсинга. */
+export async function loadHistoryRun(taskId: string): Promise<TaskResult> {
+  const resp = await fetch(`${API_URL}/api/history/${taskId}`, { cache: "no-store" });
+  return handle<TaskResult>(resp);
+}
+
+export async function deleteHistoryRun(taskId: string): Promise<void> {
+  const resp = await fetch(`${API_URL}/api/history/${taskId}`, { method: "DELETE" });
+  if (!resp.ok && resp.status !== 204) {
+    throw new Error(`API ${resp.status}`);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Отбор клиентов                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Оценить организации: тип ссылки, дубли, проба сайта, вердикт модели. */
+export async function scanProspects(
+  items: {
+    name: string;
+    website: string | null;
+    reviews_count: number | null;
+    rating: number | null;
+    socials: string[];
+  }[],
+  refresh = false,
+): Promise<ScanResult> {
+  const resp = await fetch(`${API_URL}/api/prospects/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items, refresh }),
+  });
+  return handle<ScanResult>(resp);
+}
+
+/** Уже посчитанные вердикты — чтобы не пересчитывать при возврате к выдаче. */
+export async function getVerdicts(sites: string[]): Promise<ProspectVerdict[]> {
+  if (sites.length === 0) return [];
+  const params = new URLSearchParams();
+  sites.forEach((s) => params.append("site", s));
+  const resp = await fetch(`${API_URL}/api/prospects/verdicts?${params.toString()}`, {
+    cache: "no-store",
+  });
+  return handle<ProspectVerdict[]>(resp);
+}
+
+/* ------------------------------------------------------------------ */
+/* Персональные демо ИИ-ассистента                                     */
+/* ------------------------------------------------------------------ */
+
+/** Настроена ли интеграция с kb_assistant. Кнопка «Демо» скрыта, если нет. */
+export async function getDemoConfig(): Promise<DemoConfig> {
+  const resp = await fetch(`${API_URL}/api/demos/config`, { cache: "no-store" });
+  return handle<DemoConfig>(resp);
+}
+
+/** Завести демо пачке организаций: краул сайта идёт в фоне. */
+export async function provisionDemos(
+  items: { name: string; website: string }[],
+): Promise<DemoStatus[]> {
+  const resp = await fetch(`${API_URL}/api/demos/provision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  const data = await handle<{ items: DemoStatus[] }>(resp);
+  return data.items;
+}
+
+/** Статусы конкретных демо — для опроса, пока идёт краул. */
+export async function getDemoStatuses(slugs: string[]): Promise<DemoStatus[]> {
+  if (slugs.length === 0) return [];
+  const params = new URLSearchParams();
+  slugs.forEach((s) => params.append("slug", s));
+  const resp = await fetch(`${API_URL}/api/demos/status?${params.toString()}`, {
+    cache: "no-store",
+  });
+  const data = await handle<{ items: DemoStatus[] }>(resp);
+  return data.items;
+}
+
+/** Удалить демо вместе с собранной базой знаний. */
+export async function deleteDemo(slug: string): Promise<void> {
+  const resp = await fetch(`${API_URL}/api/demos/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok && resp.status !== 204) {
+    const text = await resp.text().catch(() => resp.statusText);
+    throw new Error(`API ${resp.status}: ${text}`);
+  }
+}
+
+/** Все заведённые демо — чтобы таблица знала о них после перезапуска. */
+export async function listDemos(): Promise<DemoStatus[]> {
+  const resp = await fetch(`${API_URL}/api/demos/list`, { cache: "no-store" });
+  const data = await handle<{ items: DemoStatus[] }>(resp);
+  return data.items;
 }
 
 /**
