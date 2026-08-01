@@ -29,6 +29,7 @@ from .prospect_rules import (
     LINK_OWN,
     all_sites,
     classify_link,
+    needs_booking,
     VERDICT_GOOD,
     VERDICT_MAYBE,
     VERDICT_SKIP,
@@ -133,7 +134,9 @@ def _site_note(link_kind: str, org: Organization) -> str:
     return "ничего"
 
 
-def _apply_probe(v: ProspectVerdict, probe: ProbeResult) -> None:
+def _apply_probe(
+    v: ProspectVerdict, probe: ProbeResult, *, booking_matters: bool = False
+) -> None:
     """Наложить сигналы пробы.
 
     Проба принципиально НЕ ставит «мимо». Ни один её сигнал не является
@@ -171,13 +174,24 @@ def _apply_probe(v: ProspectVerdict, probe: ProbeResult) -> None:
     elif stale:
         v.web = VERDICT_GOOD
         v.web_reasons.append(f"сайт не обновляли с {probe.last_year} года")
+    elif booking_matters and not probe.tech.booking:
+        # Сайт современный, но записаться на нём нельзя: клиент пишет в
+        # телеграм и ждёт ответа администратора. Переделывать нечего, а
+        # дорабатывать есть что — «возможно», а не «годится».
+        v.web = VERDICT_MAYBE
+        v.web_reasons.extend(probe.tech.booking_note())
     else:
-        # Отвечает, адаптивный, стек современный — переделывать нечего.
+        # Отвечает, адаптивный, стек современный, записаться есть где.
         v.web = VERDICT_SKIP
         v.web_reasons.append("сайт современный")
 
 
-def _apply_other_sites(v: ProspectVerdict, rest: list[tuple[str, ProbeResult]]) -> None:
+def _apply_other_sites(
+    v: ProspectVerdict,
+    rest: list[tuple[str, ProbeResult]],
+    *,
+    booking_matters: bool = False,
+) -> None:
     """Остальные сайты компании — могут только снять ось «сайт», не поставить.
 
     Живой современный сайт где-то во второй ссылке означает, что предлагать
@@ -186,8 +200,17 @@ def _apply_other_sites(v: ProspectVerdict, rest: list[tuple[str, ProbeResult]]) 
     """
     for url, probe in rest:
         if probe.ok and not probe.tech.outdated and probe.text_len >= 400:
-            v.web = VERDICT_SKIP
-            v.web_reasons.append(f"у компании уже есть рабочий сайт: {site_key(url)}")
+            # Записи и здесь нет — сайт есть, но записаться клиенту негде.
+            # Только там, где на время вообще записываются: магазину эта
+            # придирка ни к чему, и занижать ему ось из-за неё нельзя.
+            if booking_matters and not probe.tech.booking:
+                v.web = VERDICT_MAYBE
+                v.web_reasons.append(
+                    f"сайт {site_key(url)} рабочий, но онлайн-записи на нём нет"
+                )
+            else:
+                v.web = VERDICT_SKIP
+                v.web_reasons.append(f"у компании уже есть рабочий сайт: {site_key(url)}")
             return
 
 
@@ -305,8 +328,9 @@ async def scan(
 
     for idx, results in by_idx.items():
         # Главный — первый по порядку карточки, он и решает про демо.
-        _apply_probe(verdicts[idx], results[0][1])
-        _apply_other_sites(verdicts[idx], results[1:])
+        wants_booking = needs_booking(orgs[idx])
+        _apply_probe(verdicts[idx], results[0][1], booking_matters=wants_booking)
+        _apply_other_sites(verdicts[idx], results[1:], booking_matters=wants_booking)
 
     # --- Ступень 3 ---
     # Модель смотрит ВСЕХ, а не только владельцев обходимого сайта. Раньше

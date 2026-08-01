@@ -54,6 +54,18 @@ _VIEWPORT = re.compile(r"<meta[^>]+name=[\"']viewport", re.IGNORECASE)
 _PHP_LINKS = re.compile(r"\.php[\"'?]", re.IGNORECASE)
 _TABLE_LAYOUT = re.compile(r"<table[^>]*>\s*<tr", re.IGNORECASE)
 _JQUERY = re.compile(r"jquery[.\-/]?(\d+)\.(\d+)", re.IGNORECASE)
+# Настоящая онлайн-запись — это виджет платформы, где клиент сам выбирает
+# мастера и время. По слову «Записаться» судить нельзя: сплошь и рядом такая
+# кнопка ведёт в телеграм или к форме заявки, а значит клиент всё равно ждёт
+# ответа администратора — то есть ровно тот случай, ради которого мы и идём.
+_BOOKING_PLATFORM = re.compile(
+    r"(yclients|dikidi\.(net|ru)|easyweek|sonline\.su|gbooking|yclients\.com"
+    r"|n\d{5,}\.\w+|zapis-?online|booking\.\w+|sberbusiness\.booking)",
+    re.IGNORECASE,
+)
+# Форма на странице — не запись, но и не «пишите в телеграм»: заявку оставить
+# можно, время не выберешь.
+_FORM = re.compile(r"<form[\s>]", re.IGNORECASE)
 _GENERATOR = re.compile(
     r"<meta[^>]+name=[\"']generator[\"'][^>]+content=[\"']([^\"']+)", re.IGNORECASE
 )
@@ -83,16 +95,33 @@ class TechSignals:
     builder: bool = False            # Tilda, Wix, uCoz и подобное
     legacy_builder: bool = False     # платформа нулевых: uCoz, Nethouse, a5
     no_tls: bool = False
+    booking: bool = False            # виджет записи: клиент сам выбирает время
+    form: bool = False               # хотя бы форма заявки
+
+    def booking_note(self) -> list[str]:
+        """Как на сайте записываются — отдельно от того, на чём он сделан.
+
+        Свежая Tilda без записи — такой же повод для разговора, как старый
+        самопис: пока записи нет, клиент пишет в мессенджер и ждёт ответа
+        администратора.
+        """
+        if self.booking:
+            return []
+        if self.form:
+            return ["на сайте только форма заявки, времени не выбрать"]
+        return ["на сайте нельзя записаться — только мессенджер или звонок"]
 
     def summary(self) -> list[str]:
         """Человеческие формулировки — идут и в подсказку, и в промпт модели."""
+        no_booking = self.booking_note()
+
         if self.legacy_builder:
-            return ["сайт на устаревшем конструкторе (uCoz, Nethouse и подобные)"]
+            return ["сайт на устаревшем конструкторе (uCoz, Nethouse и подобные)"] + no_booking
         if self.builder:
             # У современного конструктора весь стек свой, обсуждать его нечего.
-            return ["сайт на конструкторе"]
+            return ["сайт на конструкторе"] + no_booking
 
-        out: list[str] = []
+        out: list[str] = list(no_booking)
         if not self.responsive:
             out.append("нет мобильной вёрстки")
         if self.no_tls:
@@ -152,6 +181,8 @@ def _tech(html: str, url: str) -> TechSignals:
     t.table_layout = bool(_TABLE_LAYOUT.search(html))
     t.builder = bool(_BUILDER.search(html))
     t.legacy_builder = bool(_BUILDER_LEGACY.search(html))
+    t.booking = bool(_BOOKING_PLATFORM.search(html))
+    t.form = bool(_FORM.search(html))
     t.no_tls = url.lower().startswith("http://")
 
     m = _JQUERY.search(html)

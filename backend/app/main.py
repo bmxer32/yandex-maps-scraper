@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Yandex Maps Scraper",
     description="Сбор данных с Яндекс.Карт: сфера, контакты, сайты, email.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
