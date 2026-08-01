@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows-blue?logo=windows&logoColor=white)](https://github.com/bmxer32/yandex-maps-scraper/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/bmxer32/yandex-maps-scraper/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-orange.svg)](https://github.com/bmxer32/yandex-maps-scraper/releases)
 
 </div>
 
@@ -36,7 +36,7 @@
 
 ### Готовый установщик (для пользователей)
 
-1. Скачайте `YandexMapsScraper-Setup-0.2.0.exe` из [Releases](https://github.com/bmxer32/yandex-maps-scraper/releases)
+1. Скачайте `YandexMapsScraper-Setup-0.3.0.exe` из [Releases](https://github.com/bmxer32/yandex-maps-scraper/releases)
 2. Запустите установщик — выберите папку установки
 3. Запустите «Yandex Maps Scraper» с рабочего стола или из меню Пуск
 4. Введите сферу бизнеса, выберите город — нажмите «Собрать данные»
