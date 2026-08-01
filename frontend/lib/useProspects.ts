@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getVerdicts, scanProspects } from "./api";
 import type { Organization, ProspectVerdict } from "./types";
-import { siteKey } from "./utils";
+import { rowKey, siteKey } from "./utils";
 
 export interface UseProspects {
   /** Вердикты по ключу сайта — тем же, каким склеиваются демо. */
@@ -33,14 +33,23 @@ export function useProspects(organizations: Organization[]): UseProspects {
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const merge = useCallback((items: ProspectVerdict[]) => {
+  /**
+   * Разложить вердикты по ключам строк.
+   *
+   * `orgs` — те организации, что уходили в запрос: бэкенд отвечает в том же
+   * порядке, и по ним достаётся ключ для компаний без сайта. Без этого весь
+   * сегмент «сайта нет» оставался бы без вердикта — а на оси «сайт» это
+   * первые кандидаты.
+   */
+  const merge = useCallback((items: ProspectVerdict[], orgs?: Organization[]) => {
     if (items.length === 0) return;
     setVerdicts((prev) => {
       const next = { ...prev };
-      for (const v of items) {
-        const key = v.site || siteKey(v.website);
+      items.forEach((v, i) => {
+        const org = orgs && orgs.length === items.length ? orgs[i] : undefined;
+        const key = v.site || siteKey(v.website) || (org ? rowKey(org) : "");
         if (key) next[key] = v;
-      }
+      });
       return next;
     });
   }, []);
@@ -82,10 +91,12 @@ export function useProspects(organizations: Organization[]): UseProspects {
             reviews_count: o.reviews_count,
             rating: o.rating,
             socials: o.socials ?? [],
+            address: o.address,
+            categories: o.categories ?? [],
           })),
           refresh,
         );
-        merge(res.items);
+        merge(res.items, orgs);
         setClassified(res.classified);
         setQuotaHit(res.quota_hit);
         setLlmEnabled(res.llm_enabled);

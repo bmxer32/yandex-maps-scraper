@@ -45,6 +45,8 @@ def _as_org(item: ScanRequestItem) -> Organization:
         reviews_count=item.reviews_count,
         rating=item.rating,
         socials=item.socials,
+        address=item.address,
+        categories=item.categories,
     )
 
 
@@ -67,6 +69,8 @@ def _row_to_model(row: SiteVerdictRow) -> ProspectVerdict:
         demo=row.demo or "manual",
         verdict=row.verdict or "maybe",
         reasons=list(row.reasons or []),
+        web=row.web or "maybe",
+        web_reasons=list(row.web_reasons or []),
         duplicate_of=row.duplicate_of,
         http_status=row.http_status,
         text_len=row.text_len,
@@ -93,6 +97,8 @@ async def _save(verdicts: list[ProspectVerdict]) -> None:
             row.demo = v.demo
             row.verdict = v.verdict
             row.reasons = v.reasons
+            row.web = v.web
+            row.web_reasons = v.web_reasons
             row.duplicate_of = v.duplicate_of
             row.http_status = v.http_status
             row.text_len = v.text_len
@@ -101,6 +107,19 @@ async def _save(verdicts: list[ProspectVerdict]) -> None:
             row.alive = v.alive
             row.checked_at = datetime.utcnow()
         await db.commit()
+
+
+def _site_note(link_kind: str, website: str | None) -> str:
+    """Что написать модели про поле «сайт», когда самого сайта нет."""
+    if link_kind == "social":
+        return f"страница в соцсети ({website})"
+    if link_kind == "booking":
+        return f"виджет онлайн-записи ({website})"
+    if link_kind == "builder":
+        return f"сайт на конструкторе ({website})"
+    if website:
+        return website
+    return "ничего"
 
 
 def _apply_probe(v: ProspectVerdict, probe: ProbeResult) -> None:
@@ -121,12 +140,30 @@ def _apply_probe(v: ProspectVerdict, probe: ProbeResult) -> None:
         v.demo = "manual"
         if v.verdict == VERDICT_GOOD:
             v.verdict = VERDICT_MAYBE
+        # А вот для оси «сайт» лежащий сайт — прямой повод обратиться.
+        if probe.error:
+            v.web = VERDICT_GOOD
+            v.web_reasons.append("сайт не отвечает")
         return
 
     now = datetime.now().year
     stale = probe.last_year is not None and now - probe.last_year >= 3
     if (stale or probe.text_len < 400) and v.verdict == VERDICT_GOOD:
         v.verdict = VERDICT_MAYBE
+
+    # Ось «сайт»: устаревший стек — прямой повод предложить переделку.
+    if probe.tech.outdated:
+        v.web = VERDICT_GOOD
+        v.web_reasons.extend(probe.tech.summary())
+    elif probe.tech.builder:
+        v.web = VERDICT_MAYBE
+    elif stale:
+        v.web = VERDICT_GOOD
+        v.web_reasons.append(f"сайт не обновляли с {probe.last_year} года")
+    else:
+        # Отвечает, адаптивный, стек современный — переделывать нечего.
+        v.web = VERDICT_SKIP
+        v.web_reasons.append("сайт современный")
 
 
 def _apply_llm(v: ProspectVerdict, verdict: site_verdict.Verdict, reviews: int) -> None:
@@ -145,10 +182,20 @@ def _apply_llm(v: ProspectVerdict, verdict: site_verdict.Verdict, reviews: int) 
     v.alive = verdict.alive if verdict.alive != "не понял" else v.alive
     if verdict.reason:
         v.reasons.append(verdict.reason)
+    if verdict.web_reason:
+        v.web_reasons.append(verdict.web_reason)
+
+    chain = verdict.scale in ("сеть", "франшиза")
+    if chain:
+        # Сеть закрывает обе оси разом: ни ассистента, ни сайт локальному
+        # подрядчику там не закажут — решают централизованно. Именно это
+        # пропускалось раньше, и 4hands висел среди приоритетных.
+        v.verdict = VERDICT_SKIP
+        v.web = VERDICT_SKIP
+        return
 
     if verdict.verdict == "мимо":
-        chain = verdict.scale in ("сеть", "франшиза")
-        if not chain and reviews >= 20:
+        if reviews >= 20:
             # Отсев по «заброшен» при живых отзывах — противоречие, не верим.
             v.verdict = VERDICT_MAYBE
             v.reasons.append(
@@ -160,6 +207,14 @@ def _apply_llm(v: ProspectVerdict, verdict: site_verdict.Verdict, reviews: int) 
         v.verdict = VERDICT_GOOD
     elif verdict.verdict == "сомнительно" and v.verdict == VERDICT_GOOD:
         v.verdict = VERDICT_MAYBE
+
+    # Ось «сайт»: модель уточняет то, что дали правила и признаки стека.
+    if verdict.web == "мимо":
+        v.web = VERDICT_SKIP
+    elif verdict.web == "годится":
+        v.web = VERDICT_GOOD
+    elif verdict.web == "сомнительно" and v.web == VERDICT_GOOD:
+        v.web = VERDICT_MAYBE
 
 
 async def scan(
@@ -211,32 +266,46 @@ async def scan(
             _apply_probe(verdicts[idx], probe)
 
     # --- Ступень 3 ---
+    # Модель смотрит ВСЕХ, а не только владельцев обходимого сайта. Раньше
+    # компания с виджетом записи вместо сайта до неё не доходила и проходила
+    # по одному числу отзывов — так федеральная франшиза 4hands оказывалась
+    # среди приоритетных.
     classified = 0
     quota_hit = 0
     if site_verdict.enabled():
-        ready = [
-            (idx, url)
-            for idx, url in to_probe
-            if (p := probes.get(url)) is not None and p.ok and p.text_len >= 200
-        ]
-        if ready:
+        probe_by_idx = {idx: probes.get(url) for idx, url in to_probe}
+        pending = [idx for idx, v in enumerate(verdicts) if v.checked_at and v.name]
+
+        if pending:
             # Свой лимит: у модели ограничение по запросам в минуту, у проб
             # сайтов — нет. Общий семафор упирался в 429.
             sem = asyncio.Semaphore(settings.verdict_concurrency)
             async with httpx.AsyncClient() as client:
 
-                async def one(idx: int, url: str) -> None:
+                async def one(idx: int) -> None:
                     nonlocal classified, quota_hit
                     async with sem:
-                        probe = probes[url]
-                        res = await site_verdict.classify(client, verdicts[idx].name or "", probe.text)
+                        v = verdicts[idx]
+                        org = orgs[idx]
+                        probe = probe_by_idx.get(idx)
+                        has_text = probe is not None and probe.ok and probe.text_len >= 200
+
+                        res = await site_verdict.classify(
+                            client,
+                            v.name or "",
+                            probe.text if has_text else "",
+                            tech="; ".join(probe.tech.summary()) if has_text else "",
+                            address=org.address or "",
+                            categories=", ".join(org.categories or []),
+                            site_note=_site_note(v.link_kind, org.website),
+                        )
                         if res.ok:
                             classified += 1
                         elif res.error and "лимит" in res.error:
                             quota_hit += 1
-                        _apply_llm(verdicts[idx], res, orgs[idx].reviews_count or 0)
+                        _apply_llm(v, res, org.reviews_count or 0)
 
-                await asyncio.gather(*(one(i, u) for i, u in ready))
+                await asyncio.gather(*(one(i) for i in pending))
 
     fresh = [v for v in verdicts if v.site and v.site not in cached]
     if fresh:

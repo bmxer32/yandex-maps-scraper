@@ -59,6 +59,9 @@ class SiteVerdictRow(Base):
     demo: Mapped[Optional[str]] = mapped_column(String)        # auto|manual
     verdict: Mapped[Optional[str]] = mapped_column(String)     # good|maybe|skip
     reasons: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    # Вторая ось: сделать или переделать сайт.
+    web: Mapped[Optional[str]] = mapped_column(String)
+    web_reasons: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     duplicate_of: Mapped[Optional[str]] = mapped_column(String)
     http_status: Mapped[Optional[int]] = mapped_column(Integer)
     text_len: Mapped[Optional[int]] = mapped_column(Integer)

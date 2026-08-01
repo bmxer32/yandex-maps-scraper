@@ -39,6 +39,8 @@ _BUILDER = re.compile(
     r"|umi\.ru|a5\.ru|ucoz\.\w+|jimdosite\.com)$",
     re.IGNORECASE,
 )
+# Из них — платформы нулевых: сайт на них устарел сам по себе.
+_BUILDER_LEGACY = re.compile(r"(^|\.)(nethouse\.ru|umi\.ru|a5\.ru|ucoz\.\w+)$", re.IGNORECASE)
 
 LINK_OWN = "own"
 LINK_SOCIAL = "social"
@@ -171,10 +173,38 @@ def evaluate(
     if has_messenger(org):
         reasons.append("есть мессенджер для связи")
 
+    # --- Вторая ось: сделать или переделать сайт ---
+    # Признаки стека появятся на второй ступени; здесь только то, что видно
+    # из поля «сайт». Отсутствие сайта — не недостаток клиента, а повод:
+    # продать первый сайт проще, чем замену рабочему.
+    web_reasons: list[str] = []
+    if kind == LINK_NONE:
+        web = VERDICT_GOOD
+        web_reasons.append("сайта нет — можно сделать с нуля")
+    elif kind in (LINK_SOCIAL, LINK_BOOKING):
+        web = VERDICT_GOOD
+        web_reasons.append(
+            "вместо сайта соцсеть" if kind == LINK_SOCIAL else "вместо сайта виджет записи"
+        )
+    elif kind == LINK_BUILDER:
+        # uCoz и Nethouse — платформы нулевых: там менять есть что.
+        # Tilda и Wix отдают живой адаптивный сайт, это только «возможно».
+        if _BUILDER_LEGACY.search(site_key(org.website)):
+            web = VERDICT_GOOD
+            web_reasons.append("сайт на устаревшем конструкторе")
+        else:
+            web = VERDICT_MAYBE
+            web_reasons.append("сайт на конструкторе — рабочий, но простой")
+    else:
+        # Свой сайт: решает вторая ступень, до неё судить не о чем.
+        web = VERDICT_MAYBE
+
     return {
         "link_kind": kind,
         "demo": demo,
         "verdict": verdict,
         "reasons": reasons,
+        "web": web,
+        "web_reasons": web_reasons,
         "duplicate_of": duplicate_of,
     }

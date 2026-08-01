@@ -103,6 +103,9 @@ export async function scanProspects(
     reviews_count: number | null;
     rating: number | null;
     socials: string[];
+    /** Город и рубрики: у компании без сайта это всё, по чему модель её узнаёт. */
+    address: string | null;
+    categories: string[];
   }[],
   refresh = false,
 ): Promise<ScanResult> {

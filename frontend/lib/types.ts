@@ -135,8 +135,12 @@ export interface ProspectVerdict {
   website: string | null;
   link_kind: LinkKind;
   demo: DemoFitness;
+  /** Ось 1: предложить ИИ-ассистента. */
   verdict: VerdictState;
   reasons: string[];
+  /** Ось 2: сделать или переделать сайт. Оценивается независимо. */
+  web: VerdictState;
+  web_reasons: string[];
   duplicate_of: string | null;
   http_status: number | null;
   text_len: number | null;
@@ -158,6 +162,16 @@ export const VERDICT_LABELS: Record<VerdictState, string> = {
   maybe: "Сомнительно",
   skip: "Мимо",
 };
+
+/** Подписи оси «сайт»: там «годится» означает «есть что переделать». */
+export const WEB_LABELS: Record<VerdictState, string> = {
+  good: "Нужен сайт",
+  maybe: "Возможно",
+  skip: "Не нужен",
+};
+
+/** По какой оси отбираем. */
+export type Axis = "ai" | "web";
 
 /* ------------------------------------------------------------------ */
 /* Персональные демо ИИ-ассистента (интеграция с kb_assistant)          */

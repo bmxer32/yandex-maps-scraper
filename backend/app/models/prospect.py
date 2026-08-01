@@ -19,6 +19,10 @@ class ScanRequestItem(BaseModel):
     reviews_count: Optional[int] = None
     rating: Optional[float] = None
     socials: list[str] = Field(default_factory=list)
+    # Город и рубрики. Для компании без сайта модель видит только их — по ним
+    # и узнаётся федеральный бренд.
+    address: Optional[str] = None
+    categories: list[str] = Field(default_factory=list)
 
 
 class ScanRequest(BaseModel):
@@ -36,8 +40,12 @@ class ProspectVerdict(BaseModel):
 
     link_kind: str = "none"         # own | social | booking | builder | none
     demo: str = "manual"            # auto | manual
-    verdict: str = "maybe"          # good | maybe | skip
+    verdict: str = "maybe"          # good | maybe | skip — ИИ-ассистент
     reasons: list[str] = Field(default_factory=list)
+    # Вторая ось: сделать или переделать сайт. Своя оценка и свои причины —
+    # компания без сайта плоха для автодемо и при этом лучший клиент здесь.
+    web: str = "maybe"              # good | maybe | skip
+    web_reasons: list[str] = Field(default_factory=list)
 
     duplicate_of: Optional[str] = None
     http_status: Optional[int] = None

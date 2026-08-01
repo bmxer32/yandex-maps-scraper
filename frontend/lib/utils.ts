@@ -50,6 +50,22 @@ export function siteKey(url: string | null | undefined): string {
 }
 
 /**
+ * Ключ строки таблицы для вердикта отбора.
+ *
+ * У компании без сайта `siteKey` пустой, и все такие строки слиплись бы в один
+ * ключ. Для оси «сайт» это как раз лучшие клиенты — «сделать с нуля», — поэтому
+ * им нужен свой ключ: название с адресом. Для демо ключ по-прежнему только
+ * сайт: без сайта краулить нечего.
+ */
+export function rowKey(org: {
+  name: string;
+  website?: string | null;
+  address?: string | null;
+}): string {
+  return siteKey(org.website) || `${org.name}|${org.address ?? ""}`.toLowerCase();
+}
+
+/**
  * Ссылка на карточку организации в Яндекс.Картах.
  *
  * Парсер кладёт в `permalink` числовой id организации — по нему Яндекс сам
