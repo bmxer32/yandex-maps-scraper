@@ -27,6 +27,8 @@ from . import site_verdict
 from .prospect_rules import (
     DEMO_AUTO,
     LINK_OWN,
+    all_sites,
+    classify_link,
     VERDICT_GOOD,
     VERDICT_MAYBE,
     VERDICT_SKIP,
@@ -42,6 +44,7 @@ def _as_org(item: ScanRequestItem) -> Organization:
     return Organization(
         name=item.name,
         website=item.website,
+        websites=item.websites,
         reviews_count=item.reviews_count,
         rating=item.rating,
         socials=item.socials,
@@ -109,16 +112,24 @@ async def _save(verdicts: list[ProspectVerdict]) -> None:
         await db.commit()
 
 
-def _site_note(link_kind: str, website: str | None) -> str:
-    """Что написать модели про поле «сайт», когда самого сайта нет."""
+def _site_note(link_kind: str, org: Organization) -> str:
+    """Что написать модели про поле «сайт».
+
+    Ссылок бывает несколько — перечисляем все, иначе модель судит о компании
+    по случайной из них.
+    """
+    sites = all_sites(org)
+    main = sites[0] if sites else None
+    extra = f" (ещё: {', '.join(sites[1:])})" if len(sites) > 1 else ""
+
     if link_kind == "social":
-        return f"страница в соцсети ({website})"
+        return f"страница в соцсети ({main}){extra}"
     if link_kind == "booking":
-        return f"виджет онлайн-записи ({website})"
+        return f"виджет онлайн-записи ({main}){extra}"
     if link_kind == "builder":
-        return f"сайт на конструкторе ({website})"
-    if website:
-        return website
+        return f"сайт на конструкторе ({main}){extra}"
+    if main:
+        return f"{main}{extra}"
     return "ничего"
 
 
@@ -166,7 +177,27 @@ def _apply_probe(v: ProspectVerdict, probe: ProbeResult) -> None:
         v.web_reasons.append("сайт современный")
 
 
-def _apply_llm(v: ProspectVerdict, verdict: site_verdict.Verdict, reviews: int) -> None:
+def _apply_other_sites(v: ProspectVerdict, rest: list[tuple[str, ProbeResult]]) -> None:
+    """Остальные сайты компании — могут только снять ось «сайт», не поставить.
+
+    Живой современный сайт где-то во второй ссылке означает, что предлагать
+    разработку нечего, каким бы ни был первый адрес. Обратное неверно: одна
+    лишняя старая страница ещё не повод объявлять, что компании нужен сайт.
+    """
+    for url, probe in rest:
+        if probe.ok and not probe.tech.outdated and probe.text_len >= 400:
+            v.web = VERDICT_SKIP
+            v.web_reasons.append(f"у компании уже есть рабочий сайт: {site_key(url)}")
+            return
+
+
+def _apply_llm(
+    v: ProspectVerdict,
+    verdict: site_verdict.Verdict,
+    reviews: int,
+    *,
+    live_site: bool = False,
+) -> None:
     """Наложить вердикт модели — единственная ступень, которой можно отсеивать.
 
     С одной оговоркой: живой поток отзывов перевешивает вывод «заброшен».
@@ -212,7 +243,10 @@ def _apply_llm(v: ProspectVerdict, verdict: site_verdict.Verdict, reviews: int) 
     if verdict.web == "мимо":
         v.web = VERDICT_SKIP
     elif verdict.web == "годится":
-        v.web = VERDICT_GOOD
+        # Проба уже видела живой современный сайт — значит, вопрос не в том,
+        # что сайта нет, а в его наполнении. Это «возможно», а не готовая
+        # цель: идти предлагать разработку тому, у кого сайт есть, — стыдно.
+        v.web = VERDICT_MAYBE if live_site else VERDICT_GOOD
     elif verdict.web == "сомнительно" and v.web == VERDICT_GOOD:
         v.web = VERDICT_MAYBE
 
@@ -251,8 +285,11 @@ async def scan(
             **base,
         )
         verdicts.append(v)
-        if base["link_kind"] == LINK_OWN and org.website:
-            to_probe.append((idx, org.website))
+        # Пробуем каждый собственный сайт компании, а не только первый: у той
+        # же карточки рядом с настоящим сайтом висит ссылка на онлайн-запись.
+        for url in all_sites(org):
+            if classify_link(url) == LINK_OWN:
+                to_probe.append((idx, url))
 
     # --- Ступень 2 ---
     probes = await probe_many(
@@ -260,10 +297,16 @@ async def scan(
         concurrency=settings.scan_concurrency,
         timeout=settings.scan_timeout,
     )
+    by_idx: dict[int, list[tuple[str, ProbeResult]]] = {}
     for idx, url in to_probe:
         probe = probes.get(url)
         if probe is not None:
-            _apply_probe(verdicts[idx], probe)
+            by_idx.setdefault(idx, []).append((url, probe))
+
+    for idx, results in by_idx.items():
+        # Главный — первый по порядку карточки, он и решает про демо.
+        _apply_probe(verdicts[idx], results[0][1])
+        _apply_other_sites(verdicts[idx], results[1:])
 
     # --- Ступень 3 ---
     # Модель смотрит ВСЕХ, а не только владельцев обходимого сайта. Раньше
@@ -273,7 +316,8 @@ async def scan(
     classified = 0
     quota_hit = 0
     if site_verdict.enabled():
-        probe_by_idx = {idx: probes.get(url) for idx, url in to_probe}
+        # Главная страница главного сайта — она уходит в промпт.
+        probe_by_idx = {idx: results[0][1] for idx, results in by_idx.items()}
         pending = [idx for idx, v in enumerate(verdicts) if v.checked_at and v.name]
 
         if pending:
@@ -297,13 +341,17 @@ async def scan(
                             tech="; ".join(probe.tech.summary()) if has_text else "",
                             address=org.address or "",
                             categories=", ".join(org.categories or []),
-                            site_note=_site_note(v.link_kind, org.website),
+                            site_note=_site_note(v.link_kind, org),
                         )
                         if res.ok:
                             classified += 1
                         elif res.error and "лимит" in res.error:
                             quota_hit += 1
-                        _apply_llm(v, res, org.reviews_count or 0)
+                        live = any(
+                            p.ok and not p.tech.outdated and p.text_len >= 400
+                            for _, p in by_idx.get(idx, [])
+                        )
+                        _apply_llm(v, res, org.reviews_count or 0, live_site=live)
 
                 await asyncio.gather(*(one(i) for i in pending))
 

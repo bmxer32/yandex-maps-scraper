@@ -81,6 +81,30 @@ def site_key(url: Optional[str]) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def all_sites(org: Organization) -> list[str]:
+    """Все ссылки компании из поля «сайт», первая — главная."""
+    if org.websites:
+        return [u for u in org.websites if u]
+    return [org.website] if org.website else []
+
+
+def best_link(org: Organization) -> tuple[str, Optional[str]]:
+    """Лучшая из ссылок компании и её тип.
+
+    Ссылок бывает несколько: настоящий сайт и рядом страница онлайн-записи.
+    Судить по первой попавшейся нельзя — иначе компания с нормальным сайтом
+    выглядит как та, у кого «вместо сайта виджет записи», и мы идём предлагать
+    ей то, что у неё уже есть.
+    """
+    rank = {LINK_OWN: 0, LINK_BUILDER: 1, LINK_BOOKING: 2, LINK_SOCIAL: 3, LINK_NONE: 4}
+    best: tuple[int, str, Optional[str]] = (99, LINK_NONE, None)
+    for url in all_sites(org):
+        kind = classify_link(url)
+        if rank[kind] < best[0]:
+            best = (rank[kind], kind, url)
+    return best[1], best[2]
+
+
 def classify_link(url: Optional[str]) -> str:
     """Что лежит в поле «сайт»: свой сайт, соцсеть, виджет записи, конструктор."""
     host = site_key(url)
@@ -144,12 +168,16 @@ def evaluate(
     Возвращает заготовку вердикта. Ступени 2 и 3 её уточняют, но понизить
     до «мимо» может только явная причина — не догадка.
     """
-    kind = classify_link(org.website)
+    kind, main_url = best_link(org)
     reasons: list[str] = []
 
     demo = DEMO_AUTO if kind == LINK_OWN else DEMO_MANUAL
     if kind != LINK_OWN:
         reasons.append(_LINK_LABELS[kind])
+
+    sites = all_sites(org)
+    if len(sites) > 1:
+        reasons.append(f"ссылок несколько: {', '.join(site_key(u) for u in sites)}")
 
     # Осознанно не понижаем вердикт из-за отсутствия сайта: это довод в пользу
     # клиента, а не против него. Меняется только способ подачи демо.
@@ -189,7 +217,7 @@ def evaluate(
     elif kind == LINK_BUILDER:
         # uCoz и Nethouse — платформы нулевых: там менять есть что.
         # Tilda и Wix отдают живой адаптивный сайт, это только «возможно».
-        if _BUILDER_LEGACY.search(site_key(org.website)):
+        if _BUILDER_LEGACY.search(site_key(main_url)):
             web = VERDICT_GOOD
             web_reasons.append("сайт на устаревшем конструкторе")
         else:

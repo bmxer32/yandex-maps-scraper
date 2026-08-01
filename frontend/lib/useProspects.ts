@@ -91,6 +91,7 @@ export function useProspects(organizations: Organization[]): UseProspects {
             reviews_count: o.reviews_count,
             rating: o.rating,
             socials: o.socials ?? [],
+            websites: o.websites ?? [],
             address: o.address,
             categories: o.categories ?? [],
           })),

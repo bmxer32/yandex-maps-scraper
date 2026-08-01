@@ -656,7 +656,9 @@ function OrgRow({
   verdict?: ProspectVerdict;
   showVerdict: boolean;
 }) {
-  const siteUrl = normalizeUrl(org.website);
+  // Старые выгрузки знают только один сайт и один телефон — падаем на них.
+  const sites = org.websites?.length ? org.websites : org.website ? [org.website] : [];
+  const phones = org.phones?.length ? org.phones : org.phone ? [org.phone] : [];
   // Ссылки, ведущие на сам сервис вместо аккаунта, не показываем: клик по
   // ним выглядит как поломка. В истории такие ещё встречаются.
   const socials = org.socials.filter((s) => isUsefulSocial(parseSocial(s).url));
@@ -715,38 +717,54 @@ function OrgRow({
         {org.address ?? "—"}
       </td>
 
-      {/* Телефон */}
+      {/* Телефоны — все, с городом: у салона в Сочи первым идёт московский */}
       <td className="px-3 py-3 align-top">
-        {org.phone ? (
-          <a
-            href={`tel:${org.phone.replace(/\D/g, "")}`}
-            className="inline-flex items-center gap-1.5 text-foreground hover:text-primary"
-          >
-            <Phone className="h-3 w-3 text-muted-foreground" />
-            <span className="whitespace-nowrap font-mono text-[11px] leading-tight">
-              {formatPhone(org.phone)}
-            </span>
-          </a>
+        {phones.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {phones.map((p) => (
+              <a
+                key={p}
+                href={`tel:${p.replace(/\(.*?\)\s*$/, "").replace(/\D/g, "")}`}
+                title={p}
+                className="inline-flex items-center gap-1.5 text-foreground hover:text-primary"
+              >
+                <Phone className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="whitespace-nowrap font-mono text-[11px] leading-tight">
+                  {formatPhone(p.replace(/\s*\(([^)]*[а-яА-Я][^)]*)\)\s*$/, ""))}
+                </span>
+                {/* Город берём из пометки Яндекса, если она была */}
+                {/\(([^)]*[а-яА-Я][^)]*)\)\s*$/.test(p) && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {p.match(/\(([^)]*[а-яА-Я][^)]*)\)\s*$/)?.[1]}
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
         ) : (
           <span className="text-muted-foreground/50">—</span>
         )}
       </td>
 
-      {/* Сайт */}
+      {/* Сайты — тоже все: рядом с настоящим часто висит страница записи */}
       <td className="px-3 py-3 align-top">
-        {siteUrl ? (
-          <a
-            href={siteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group inline-flex items-center gap-1.5 text-primary hover:underline"
-          >
-            <Globe className="h-3 w-3" />
-            <span className="max-w-[180px] truncate">
-              {shortenUrl(org.website)}
-            </span>
-            <ExternalLink className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
-          </a>
+        {sites.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {sites.map((s) => (
+              <a
+                key={s}
+                href={normalizeUrl(s) ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={s}
+                className="group inline-flex items-center gap-1.5 text-primary hover:underline"
+              >
+                <Globe className="h-3 w-3 shrink-0" />
+                <span className="max-w-[180px] truncate">{shortenUrl(s)}</span>
+                <ExternalLink className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+              </a>
+            ))}
+          </div>
         ) : (
           <span className="inline-flex items-center rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
             нет сайта

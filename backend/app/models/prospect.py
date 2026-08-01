@@ -16,6 +16,9 @@ from pydantic import BaseModel, Field
 class ScanRequestItem(BaseModel):
     name: str
     website: Optional[str] = None
+    # Сайтов бывает несколько. Судить «нужен ли сайт» по одному нельзя:
+    # у компании может быть нормальный сайт и вторая ссылка на запись.
+    websites: list[str] = Field(default_factory=list)
     reviews_count: Optional[int] = None
     rating: Optional[float] = None
     socials: list[str] = Field(default_factory=list)

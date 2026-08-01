@@ -103,6 +103,8 @@ export async function scanProspects(
     reviews_count: number | null;
     rating: number | null;
     socials: string[];
+    /** Все сайты компании: судить о «нужен ли сайт» по одному нельзя. */
+    websites: string[];
     /** Город и рубрики: у компании без сайта это всё, по чему модель её узнаёт. */
     address: string | null;
     categories: string[];

@@ -37,7 +37,11 @@ export interface Organization {
   lat: number | null;
   lon: number | null;
   phone: string | null;
+  /** Все телефоны карточки с городом: «+7 (988) 508-84-88 (Сочи)». */
+  phones: string[];
   website: string | null;
+  /** Все сайты компании, первый — главный. Рядом с сайтом часто висит запись. */
+  websites: string[];
   email: string | null;
   socials: string[];
   hours: string | null;
