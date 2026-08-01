@@ -6,6 +6,8 @@ import type {
   DemoConfig,
   DemoStatus,
   GeoNode,
+  ProspectVerdict,
+  ScanResult,
   SearchRequest,
   TaskProgress,
   TaskResult,
@@ -63,6 +65,40 @@ export function exportUrl(
   const params = new URLSearchParams({ fmt });
   if (onlyWithWebsite) params.set("only_with_website", "true");
   return `${API_URL}/api/export/${taskId}?${params.toString()}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Отбор клиентов                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Оценить организации: тип ссылки, дубли, проба сайта, вердикт модели. */
+export async function scanProspects(
+  items: {
+    name: string;
+    website: string | null;
+    reviews_count: number | null;
+    rating: number | null;
+    socials: string[];
+  }[],
+  refresh = false,
+): Promise<ScanResult> {
+  const resp = await fetch(`${API_URL}/api/prospects/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items, refresh }),
+  });
+  return handle<ScanResult>(resp);
+}
+
+/** Уже посчитанные вердикты — чтобы не пересчитывать при возврате к выдаче. */
+export async function getVerdicts(sites: string[]): Promise<ProspectVerdict[]> {
+  if (sites.length === 0) return [];
+  const params = new URLSearchParams();
+  sites.forEach((s) => params.append("site", s));
+  const resp = await fetch(`${API_URL}/api/prospects/verdicts?${params.toString()}`, {
+    cache: "no-store",
+  });
+  return handle<ProspectVerdict[]>(resp);
 }
 
 /* ------------------------------------------------------------------ */

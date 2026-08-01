@@ -43,6 +43,33 @@ class OrganizationRow(Base):
     )
 
 
+class SiteVerdictRow(Base):
+    """Кэш вердикта по сайту компании (ключ — домен без схемы и www).
+
+    Оценка стоит запроса к сайту и вызова модели, а один и тот же бизнес
+    попадается в разных выгрузках. Держим результат, чтобы повторное
+    сканирование не платило за него снова.
+    """
+    __tablename__ = "site_verdicts"
+
+    site: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String)
+    website: Mapped[Optional[str]] = mapped_column(Text)
+    link_kind: Mapped[Optional[str]] = mapped_column(String)   # own|social|booking|builder|none
+    demo: Mapped[Optional[str]] = mapped_column(String)        # auto|manual
+    verdict: Mapped[Optional[str]] = mapped_column(String)     # good|maybe|skip
+    reasons: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    duplicate_of: Mapped[Optional[str]] = mapped_column(String)
+    http_status: Mapped[Optional[int]] = mapped_column(Integer)
+    text_len: Mapped[Optional[int]] = mapped_column(Integer)
+    last_year: Mapped[Optional[int]] = mapped_column(Integer)
+    scale: Mapped[Optional[str]] = mapped_column(String)
+    alive: Mapped[Optional[str]] = mapped_column(String)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class SearchHistoryRow(Base):
     """История поисковых запросов (чтобы показывать в UI «недавние»)."""
     __tablename__ = "search_history"

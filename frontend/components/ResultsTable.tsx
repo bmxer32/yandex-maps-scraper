@@ -8,8 +8,10 @@ import {
   Check,
   Copy,
   Download,
+  Filter,
   ExternalLink,
   Globe,
+  ListChecks,
   Loader2,
   Mail,
   MessageCircle,
@@ -19,10 +21,11 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import type { DemoStatus, Organization } from "@/lib/types";
-import { DEMO_STATE_LABELS, isDemoPending } from "@/lib/types";
+import type { DemoStatus, Organization, ProspectVerdict } from "@/lib/types";
+import { DEMO_STATE_LABELS, VERDICT_LABELS, isDemoPending } from "@/lib/types";
 import { exportUrl } from "@/lib/api";
 import type { UseDemos } from "@/lib/useDemos";
+import { useProspects } from "@/lib/useProspects";
 import {
   cn,
   formatNumber,
@@ -37,6 +40,8 @@ import { Badge, Button, Input, Toast, buttonClass } from "@/components/ui";
 type SiteFilter = "all" | "with" | "without";
 type SortKey = "name" | "rating" | "reviews";
 type SortDir = "asc" | "desc";
+/** Фильтр по вердикту. "manual" — отдельная ось: демо собирается не автоматом. */
+type VerdictFilter = "all" | "good" | "maybe" | "skip" | "manual";
 
 export function ResultsTable({
   organizations,
@@ -54,7 +59,9 @@ export function ResultsTable({
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   // Выбранные строки — по ключу сайта: демо привязано к сайту, а не к позиции.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>("all");
 
+  const prospects = useProspects(organizations);
   const demoEnabled = demos.config?.enabled ?? false;
   // Стек ассистента в Docker поднимается около минуты после старта программы.
   const demoReady = demos.config?.ready ?? false;
@@ -77,6 +84,18 @@ export function ResultsTable({
     if (siteFilter === "with") rows = rows.filter((o) => !!o.website);
     if (siteFilter === "without") rows = rows.filter((o) => !o.website);
 
+    // Фильтр по вердикту. Скрывает только по явному выбору — по умолчанию
+    // виден весь список, чтобы ничего не потерялось незаметно.
+    if (verdictFilter !== "all") {
+      rows = rows.filter((o) => {
+        const v = prospects.verdicts[siteKey(o.website)];
+        if (!v) return false;
+        return verdictFilter === "manual"
+          ? v.demo === "manual"
+          : v.verdict === verdictFilter;
+      });
+    }
+
     // Сортировка
     const dir = sortDir === "asc" ? 1 : -1;
     rows = [...rows].sort((a, b) => {
@@ -90,7 +109,7 @@ export function ResultsTable({
     });
 
     return rows;
-  }, [organizations, query, siteFilter, sortKey, sortDir]);
+  }, [organizations, query, siteFilter, sortKey, sortDir, verdictFilter, prospects.verdicts]);
 
   const withSite = organizations.filter((o) => o.website).length;
   const withoutSite = organizations.length - withSite;
@@ -150,6 +169,28 @@ export function ResultsTable({
     setSelected(new Set());
   }
 
+  /** Отметить всех, кого оценка признала годными. Остальные остаются доступны. */
+  function selectGood() {
+    const keys = filtered
+      .filter((o) => {
+        const v = prospects.verdicts[siteKey(o.website)];
+        return v?.verdict === "good" && v.demo === "auto";
+      })
+      .map((o) => siteKey(o.website))
+      .filter(Boolean);
+    setSelected(new Set(keys));
+  }
+
+  const scanStats = useMemo(() => {
+    const rows = filtered.map((o) => prospects.verdicts[siteKey(o.website)]).filter(Boolean);
+    return {
+      rated: rows.length,
+      good: rows.filter((v) => v.verdict === "good").length,
+      skip: rows.filter((v) => v.verdict === "skip").length,
+      manual: rows.filter((v) => v.demo === "manual").length,
+    };
+  }, [filtered, prospects.verdicts]);
+
   return (
     <div className="animate-fade-in space-y-4">
       {/* Toolbar */}
@@ -168,6 +209,37 @@ export function ResultsTable({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Оценка перспективности */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => prospects.scan(filtered)}
+            disabled={prospects.scanning || filtered.length === 0}
+            title="Классифицировать ссылки, проверить сайты и спросить модель"
+          >
+            {prospects.scanning ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Filter className="h-3.5 w-3.5" />
+            )}
+            Оценить
+            {prospects.scanning && ` (${filtered.length})`}
+          </Button>
+
+          {scanStats.rated > 0 && (
+            <>
+              <Button variant="secondary" size="sm" onClick={selectGood}>
+                <ListChecks className="h-3.5 w-3.5" />
+                Выбрать годных ({scanStats.good})
+              </Button>
+              {scanStats.manual > 0 && (
+                <Badge variant="outline" className="px-3 py-1 text-sm">
+                  {formatNumber(scanStats.manual)} демо вручную
+                </Badge>
+              )}
+            </>
+          )}
+
           {/* Персональные демо ИИ-ассистента */}
           {demoEnabled && (
             <>
@@ -240,6 +312,29 @@ export function ResultsTable({
           />
         </div>
 
+        {scanStats.rated > 0 && (
+          <div className="flex rounded-md border border-border p-0.5">
+            {(["all", "good", "maybe", "skip", "manual"] as VerdictFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setVerdictFilter(f)}
+                className={cn(
+                  "rounded px-3 py-1.5 text-xs font-medium transition-colors",
+                  verdictFilter === f
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f === "all" && "Все"}
+                {f === "good" && "Годные"}
+                {f === "maybe" && "Сомнительные"}
+                {f === "skip" && "Мимо"}
+                {f === "manual" && "Демо вручную"}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex rounded-md border border-border p-0.5">
           {(["all", "with", "without"] as SiteFilter[]).map((f) => (
             <button
@@ -291,6 +386,7 @@ export function ResultsTable({
                 </th>
                 <th className="px-3 py-3 text-left">Телефон</th>
                 <th className="px-3 py-3 text-left">Сайт</th>
+                {scanStats.rated > 0 && <th className="px-3 py-3 text-left">Вердикт</th>}
                 <th className="hidden px-3 py-3 text-left lg:table-cell">
                   Контакты
                 </th>
@@ -319,6 +415,8 @@ export function ResultsTable({
                     provisioning={demos.provisioning.has(key)}
                     onToggle={() => key && toggleRow(key)}
                     onDeleteDemo={demos.remove}
+                    verdict={key ? prospects.verdicts[key] : undefined}
+                    showVerdict={scanStats.rated > 0}
                   />
                 );
               })}
@@ -349,6 +447,55 @@ export function ResultsTable({
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Вердикт по компании: цвет, подпись и причины в подсказке.
+ *
+ * Ничего не скрывает и ничего не запрещает — это подсказка человеку.
+ * «Демо вручную» показываем отдельной строкой: это про нашу автоматику,
+ * а не про качество клиента, и путать эти вещи нельзя.
+ */
+function VerdictCell({ verdict }: { verdict?: ProspectVerdict }) {
+  if (!verdict) {
+    return <span className="text-muted-foreground/40">—</span>;
+  }
+
+  const tone =
+    verdict.verdict === "good"
+      ? "bg-success/10 text-success"
+      : verdict.verdict === "skip"
+        ? "bg-destructive/10 text-destructive"
+        : "bg-warning/10 text-warning";
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span
+        title={verdict.reasons.join("\n") || undefined}
+        className={cn(
+          "inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+          tone,
+        )}
+      >
+        {verdict.verdict === "good" && <Check className="h-2.5 w-2.5" />}
+        {verdict.verdict !== "good" && <AlertTriangle className="h-2.5 w-2.5" />}
+        {VERDICT_LABELS[verdict.verdict]}
+      </span>
+
+      {verdict.demo === "manual" && (
+        <span className="text-[10px] text-muted-foreground">демо вручную</span>
+      )}
+
+      {verdict.reasons.length > 0 && (
+        <span
+          className="max-w-[220px] truncate text-[10px] text-muted-foreground/70"
+          title={verdict.reasons.join("\n")}
+        >
+          {verdict.reasons[verdict.reasons.length - 1]}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** Удаление демо в два клика — сносится и собранная база знаний. */
 function DeleteDemoButton({
@@ -439,6 +586,8 @@ function OrgRow({
   provisioning,
   onToggle,
   onDeleteDemo,
+  verdict,
+  showVerdict,
 }: {
   org: Organization;
   demoEnabled: boolean;
@@ -447,6 +596,8 @@ function OrgRow({
   provisioning: boolean;
   onToggle: () => void;
   onDeleteDemo: (slug: string) => Promise<void>;
+  verdict?: ProspectVerdict;
+  showVerdict: boolean;
 }) {
   const siteUrl = normalizeUrl(org.website);
   const hasSocials = org.socials.length > 0;
@@ -528,6 +679,13 @@ function OrgRow({
           </span>
         )}
       </td>
+
+      {/* Вердикт по перспективности */}
+      {showVerdict && (
+        <td className="px-3 py-3 align-top">
+          <VerdictCell verdict={verdict} />
+        </td>
+      )}
 
       {/* Контакты: email + соцсети */}
       <td className="hidden px-3 py-3 align-top lg:table-cell">

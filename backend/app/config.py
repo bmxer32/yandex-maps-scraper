@@ -85,6 +85,21 @@ class Settings(BaseSettings):
         """Интеграция настроена только когда заданы и адрес, и ключ."""
         return bool(self.kb_base_url and self.kb_api_key)
 
+    # --- Отбор клиентов (вердикты по сайтам) ---
+    # Ключ Gemini для третьей ступени. Пусто => ступень пропускается,
+    # механика и проба сайта продолжают работать.
+    google_api_key: str = ""
+    verdict_model: str = "gemini-flash-latest"
+    verdict_timeout: float = 30.0
+    verdict_text_limit: int = 8000     # знаков главной страницы в промпт
+    # Бесплатный тир Gemini ограничен запросами в минуту: при восьми в
+    # параллель половина выгрузки возвращала 429. Держим отдельно от проб.
+    verdict_concurrency: int = 2
+    verdict_retries: int = 3           # повторов при 429, с нарастающей паузой
+    scan_concurrency: int = 8          # параллельных проб сайтов
+    scan_timeout: float = 12.0         # таймаут одной пробы, сек
+    min_reviews: int = 5               # мягкий порог «живого» бизнеса
+
 
 @lru_cache
 def get_settings() -> Settings:

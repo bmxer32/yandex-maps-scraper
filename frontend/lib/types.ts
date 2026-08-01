@@ -94,6 +94,52 @@ export function isFinalStage(stage: TaskStage): boolean {
 }
 
 /* ------------------------------------------------------------------ */
+/* Отбор клиентов                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Что лежит в поле «сайт»: свой сайт, соцсеть, виджет записи, конструктор. */
+export type LinkKind = "own" | "social" | "booking" | "builder" | "none";
+
+/**
+ * Две независимые оси, их нельзя смешивать.
+ * `demo`   — соберём ли базу знаний автоматом (нужен обходимый сайт);
+ * `verdict` — стоит ли вообще писать этой компании.
+ * У школы с одной страницей ВКонтакте demo="manual" и при этом verdict="good".
+ */
+export type DemoFitness = "auto" | "manual";
+export type VerdictState = "good" | "maybe" | "skip";
+
+export interface ProspectVerdict {
+  site: string;
+  name: string | null;
+  website: string | null;
+  link_kind: LinkKind;
+  demo: DemoFitness;
+  verdict: VerdictState;
+  reasons: string[];
+  duplicate_of: string | null;
+  http_status: number | null;
+  text_len: number | null;
+  last_year: number | null;
+  scale: string | null;
+  alive: string | null;
+  checked_at: string | null;
+}
+
+export interface ScanResult {
+  items: ProspectVerdict[];
+  classified: number;
+  llm_enabled: boolean;
+  quota_hit: number;
+}
+
+export const VERDICT_LABELS: Record<VerdictState, string> = {
+  good: "Годится",
+  maybe: "Сомнительно",
+  skip: "Мимо",
+};
+
+/* ------------------------------------------------------------------ */
 /* Персональные демо ИИ-ассистента (интеграция с kb_assistant)          */
 /* ------------------------------------------------------------------ */
 
