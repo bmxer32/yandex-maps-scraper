@@ -49,6 +49,29 @@ export function siteKey(url: string | null | undefined): string {
     .replace(/\/+$/, "");
 }
 
+/**
+ * Ссылка на карточку организации в Яндекс.Картах.
+ *
+ * Парсер кладёт в `permalink` числовой id организации — по нему Яндекс сам
+ * разворачивает полный адрес карточки. Если id почему-то нет, падаем на
+ * поиск по координатам: показать место всё равно полезнее, чем ничего.
+ */
+export function yandexMapsUrl(org: {
+  permalink?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  name?: string;
+}): string | null {
+  if (org.permalink && /^\d+$/.test(org.permalink)) {
+    return `https://yandex.ru/maps/org/${org.permalink}/`;
+  }
+  if (org.lat != null && org.lon != null) {
+    const query = encodeURIComponent(org.name ?? "");
+    return `https://yandex.ru/maps/?ll=${org.lon},${org.lat}&z=17&text=${query}`;
+  }
+  return null;
+}
+
 /** Разбить «Label: url» из socials на компоненты. */
 export function parseSocial(s: string): { label: string; url: string } {
   const [label, ...rest] = s.split(":");

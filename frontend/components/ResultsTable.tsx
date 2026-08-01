@@ -14,6 +14,7 @@ import {
   ListChecks,
   Loader2,
   Mail,
+  MapPin,
   MessageCircle,
   Phone,
   Search as SearchIcon,
@@ -34,6 +35,7 @@ import {
   parseSocial,
   shortenUrl,
   siteKey,
+  yandexMapsUrl,
 } from "@/lib/utils";
 import { Badge, Button, Input, Toast, buttonClass } from "@/components/ui";
 
@@ -601,6 +603,7 @@ function OrgRow({
 }) {
   const siteUrl = normalizeUrl(org.website);
   const hasSocials = org.socials.length > 0;
+  const mapsUrl = yandexMapsUrl(org);
 
   return (
     <tr className="border-b border-border/50 transition-colors hover:bg-secondary/30">
@@ -621,7 +624,20 @@ function OrgRow({
 
       {/* Название */}
       <td className="px-3 py-3 align-top">
-        <div className="font-medium leading-tight">{org.name}</div>
+        <div className="flex items-start gap-1.5">
+          <span className="font-medium leading-tight">{org.name}</span>
+          {mapsUrl && (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Открыть в Яндекс.Картах"
+              className="mt-0.5 shrink-0 text-muted-foreground/60 transition-colors hover:text-primary"
+            >
+              <MapPin className="h-3 w-3" />
+            </a>
+          )}
+        </div>
         {org.categories.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {org.categories.slice(0, 2).map((c) => (
