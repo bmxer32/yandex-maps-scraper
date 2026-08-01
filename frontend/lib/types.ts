@@ -15,6 +15,12 @@ export interface GeoNode {
 
 export interface SearchRequest {
   category: string;
+  /**
+   * Точечный поиск: название, адрес, телефон или ссылка на карточку в
+   * Яндекс.Картах. Задан — гео и рубрика не используются, запрос уходит
+   * как есть.
+   */
+  raw_query?: string | null;
   country_id?: string;
   region_id?: string | null;
   city_id?: string | null;

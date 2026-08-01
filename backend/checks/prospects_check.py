@@ -160,6 +160,25 @@ def test_broken_model_answer() -> None:
     check(v.verdict == "годится", "JSON в блоке кода разбирается")
 
 
+def test_maps_url_parsing() -> None:
+    """Ссылку на карточку надо открывать напрямую: поиск по ней ничего не даёт."""
+    print("\nразбор ссылок на Яндекс.Карты:")
+    from app.core.scraper.yandex_maps import oid_from_maps_url
+
+    cases = {
+        "https://yandex.ru/maps/org/108811824146/": "108811824146",
+        "https://yandex.ru/maps/org/albera/1172396568/": "1172396568",
+        "https://yandex.com/maps/54/novosibirsk/org/albera/171066077052/": "171066077052",
+        "https://yandex.ru/maps/?ll=38.9,45.0&z=17": None,
+        "Альбера Новосибирск": None,
+        "+7 923 244-61-42": None,
+        "": None,
+    }
+    for text, expect in cases.items():
+        got = oid_from_maps_url(text)
+        check(got == expect, f"{(text or '(пусто)')[:44]:<46} → {got}")
+
+
 async def test_provider_chain() -> None:
     """Кончился один провайдер — спрашиваем следующего, а не сдаёмся."""
     print("\nцепочка провайдеров:")
@@ -237,6 +256,7 @@ async def main() -> None:
     test_year_only_from_copyright()
     test_llm_can_skip_but_reviews_protect()
     test_broken_model_answer()
+    test_maps_url_parsing()
     await test_provider_chain()
     await test_nothing_is_lost()
 

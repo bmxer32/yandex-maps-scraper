@@ -25,8 +25,9 @@ async def run_search_pipeline(task_id: str, request: SearchRequest) -> None:
       3. (Опц.) Второй проход по сайтам организаций.
       4. Кладём результат в task_manager.
     """
-    # 1) География
-    geo_hint = build_search_hint(
+    # 1) География. При точечном поиске не нужна: запрос уходит как есть,
+    # иначе к телефону или ссылке приклеился бы «, Россия».
+    geo_hint = "" if request.raw_query else build_search_hint(
         country_id=request.country_id,
         region_id=request.region_id,
         city_id=request.city_id,

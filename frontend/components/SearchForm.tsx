@@ -40,6 +40,10 @@ interface SearchFormProps {
 }
 
 export function SearchForm({ geoTree, loading, onSubmit, disabled }: SearchFormProps) {
+  // Два режима: сбор ниши целиком и точечный поиск конкретной компании,
+  // когда клиент уже известен и нужно просто добавить его в список.
+  const [mode, setMode] = useState<"niche" | "single">("niche");
+  const [rawQuery, setRawQuery] = useState("");
   const [category, setCategory] = useState("");
   const [regionId, setRegionId] = useState("");
   const [cityId, setCityId] = useState("");
@@ -80,11 +84,33 @@ export function SearchForm({ geoTree, loading, onSubmit, disabled }: SearchFormP
     setMetroId("");
   }
 
-  const canSubmit = category.trim().length >= 2 && !!regionId && !disabled;
+  const canSubmit = disabled
+    ? false
+    : mode === "single"
+      ? rawQuery.trim().length >= 3
+      : category.trim().length >= 2 && !!regionId;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    if (mode === "single") {
+      // Гео и рубрика не передаются: запрос уходит как есть, иначе к
+      // телефону или ссылке приклеится «, Россия» и ничего не найдётся.
+      onSubmit({
+        category: rawQuery.trim(),
+        raw_query: rawQuery.trim(),
+        country_id: "ru",
+        region_id: null,
+        city_id: null,
+        district_id: null,
+        metro_id: null,
+        limit: 20,
+        fetch_websites: true,
+        enrich_sites: enrichSites,
+      });
+      return;
+    }
+
     onSubmit({
       category: category.trim(),
       country_id: "ru",
@@ -116,6 +142,46 @@ export function SearchForm({ geoTree, loading, onSubmit, disabled }: SearchFormP
 
       <CardContent className="space-y-5">
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Режим: собрать нишу или добавить конкретную компанию */}
+          <div className="flex rounded-md border border-border p-0.5">
+            {([
+              { id: "niche" as const, label: "Собрать нишу" },
+              { id: "single" as const, label: "Найти компанию" },
+            ]).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setMode(m.id)}
+                className={cn(
+                  "flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors",
+                  mode === m.id
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {mode === "single" ? (
+            <div className="space-y-2">
+              <label htmlFor="rawQuery" className="text-sm font-medium">
+                Название, адрес, телефон или ссылка на Яндекс.Карты
+              </label>
+              <Input
+                id="rawQuery"
+                value={rawQuery}
+                onChange={(e) => setRawQuery(e.target.value)}
+                placeholder="Альбера Новосибирск · Орджоникидзе 30 · +7 923 244-61-42 · yandex.ru/maps/org/…"
+              />
+              <p className="text-xs text-muted-foreground">
+                Ссылка на карточку откроет именно её. Текстом ищется по Картам —
+                город лучше указывать, иначе найдётся однофамилец из другого региона.
+              </p>
+            </div>
+          ) : (
+          <>
           {/* Сфера */}
           <div className="space-y-2">
             <label htmlFor="category" className="text-sm font-medium">
@@ -254,6 +320,8 @@ export function SearchForm({ geoTree, loading, onSubmit, disabled }: SearchFormP
               />
             </div>
           </div>
+          </>
+          )}
 
           {/* Submit */}
           <div className="flex items-center gap-3 pt-2">

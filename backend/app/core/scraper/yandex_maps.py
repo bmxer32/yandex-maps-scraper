@@ -63,8 +63,13 @@ class YandexMapsScraper:
         on_progress: Optional[ProgressCb] = None,
         cancel_event: Optional[asyncio.Event] = None,
     ) -> list[Organization]:
-        query = _build_query(request.category, geo_text)
-        logger.info("YandexMapsScraper: запрос = '{}'", query)
+        # Точечный поиск идёт как есть: гео и рубрика к нему не приклеиваются,
+        # иначе «+7 923 244-61-42, Россия» ничего не находит.
+        oid = oid_from_maps_url(request.raw_query or "")
+        query = (request.raw_query or "").strip() if request.raw_query else _build_query(
+            request.category, geo_text
+        )
+        logger.info("YandexMapsScraper: запрос = '{}'{}", query, f" (карточка {oid})" if oid else "")
 
         try:
             # ВАЖНО: не оборачиваем async_playwright() в Stealth().use_async() —
@@ -82,20 +87,30 @@ class YandexMapsScraper:
                 )
                 await self._open_context_and_page()
 
-                await self._emit(
-                    on_progress,
-                    TaskStage.PARSING_LIST, 0, request.limit, 0, 0,
-                    f"Открываю карты: «{query}»",
-                )
-                await self._goto_search(query, cancel_event)
-                await human_delay(settings.min_delay, settings.max_delay)
+                if oid:
+                    # Ссылка на конкретную организацию — открываем карточку
+                    # напрямую, листать нечего.
+                    await self._emit(
+                        on_progress,
+                        TaskStage.PARSING_CARDS, 0, 1, 0, 0,
+                        "Открываю карточку организации",
+                    )
+                    await self._collect_single_card(oid)
+                else:
+                    await self._emit(
+                        on_progress,
+                        TaskStage.PARSING_LIST, 0, request.limit, 0, 0,
+                        f"Открываю карты: «{query}»",
+                    )
+                    await self._goto_search(query, cancel_event)
+                    await human_delay(settings.min_delay, settings.max_delay)
 
-                # ---- Этап 1: листаем выдачу, парсим HTML ----
-                await self._scroll_and_collect(
-                    limit=request.limit,
-                    on_progress=on_progress,
-                    cancel_event=cancel_event,
-                )
+                    # ---- Этап 1: листаем выдачу, парсим HTML ----
+                    await self._scroll_and_collect(
+                        limit=request.limit,
+                        on_progress=on_progress,
+                        cancel_event=cancel_event,
+                    )
 
                 # ---- Этап 2: достаём сайт/соцсети из карточек ----
                 if request.fetch_websites:
@@ -239,6 +254,38 @@ class YandexMapsScraper:
 
     # -------------------------------------------------- HTML-экстракция
 
+    async def _collect_single_card(self, oid: str) -> None:
+        """Собрать одну организацию по её id из ссылки на Яндекс.Карты.
+
+        Простым запросом карточка не отдаётся — Яндекс возвращает 403, —
+        поэтому идём тем же браузером, что и остальной парсинг. Разбор
+        переиспользуем: `_extract_from_html` умеет и массив items, и
+        запасной путь по regex.
+        """
+        url = ORG_CARD_URL.format(oid=oid)
+        try:
+            await self._page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except PWTimeout:
+            logger.warning("Карточка {} не открылась", oid)
+            return
+
+        try:
+            await self._page.wait_for_selector(
+                "[class*='business'], [class*='card'], [class*='tabs']", timeout=8000
+            )
+        except PWTimeout:
+            pass
+
+        html = await self._page.content()
+        found = self._extract_from_html(html)
+        if not found:
+            logger.warning("Карточка {} открылась, но организация не разобралась", oid)
+            return
+
+        # Сайт и соцсети лежат в той же странице — второй заход не нужен.
+        for org in self._found.values():
+            _enrich_from_card_html(org, html)
+
     def _extract_from_html(self, html: str) -> int:
         """
         Достаём организации из HTML. Возвращаем сколько добавили.
@@ -381,6 +428,26 @@ class YandexMapsScraper:
 def _build_query(category: str, geo_text: str) -> str:
     parts = [p.strip() for p in (category, geo_text) if p and p.strip()]
     return ", ".join(parts)
+
+
+# Ссылка на карточку организации: yandex.ru/maps/org/<слаг>/<id>/ либо
+# короткая yandex.com/maps/org/<id>/. Нужен последний числовой сегмент.
+_MAPS_ORG_RE = re.compile(
+    r"yandex\.[a-z.]+/maps(?:/[^/\s]+)*?/org/(?:[^/\s]+/)?(\d{6,})", re.IGNORECASE
+)
+
+
+def oid_from_maps_url(text: str) -> Optional[str]:
+    """Достать id организации из ссылки на Яндекс.Карты.
+
+    Поиск по такой ссылке как по тексту ничего не даёт — карточку нужно
+    открывать напрямую. Не ссылка или id не найден: None, и запрос уходит
+    обычным текстовым поиском.
+    """
+    if not text:
+        return None
+    match = _MAPS_ORG_RE.search(text.strip())
+    return match.group(1) if match else None
 
 
 def _extract_items_array(html: str) -> list[dict]:
