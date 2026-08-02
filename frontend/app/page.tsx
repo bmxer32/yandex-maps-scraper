@@ -140,7 +140,7 @@ export default function Home() {
             </a>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/30 px-2.5 py-1 text-[11px] text-muted-foreground">
               <Zap className="h-3 w-3 text-primary" />
-              v0.3
+              v0.3.1
             </span>
           </div>
         </div>
