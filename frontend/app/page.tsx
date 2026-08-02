@@ -129,40 +129,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Вкладки: сбор данных и управление разосланными демо */}
-            <div className="flex rounded-md border border-border p-0.5">
-              {([
-                { id: "search" as Tab, label: "Поиск", icon: Map },
-                { id: "history" as Tab, label: "История", icon: Clock },
-                { id: "work" as Tab, label: "В работе", icon: Star },
-                { id: "demos" as Tab, label: "Демо", icon: Bot },
-              ]).map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setTab(id)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors",
-                    tab === id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
-                  {id === "work" && workCount > 0 && (
-                    <span className="ml-0.5 rounded-full bg-background/30 px-1.5 text-[10px]">
-                      {workCount}
-                    </span>
-                  )}
-                  {id === "demos" && demoCount > 0 && (
-                    <span className="ml-0.5 rounded-full bg-background/30 px-1.5 text-[10px]">
-                      {demoCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
             <a
               href="http://127.0.0.1:8000/docs"
               target="_blank"
@@ -174,14 +140,77 @@ export default function Home() {
             </a>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/30 px-2.5 py-1 text-[11px] text-muted-foreground">
               <Zap className="h-3 w-3 text-primary" />
-              v0.3
+              v0.3.1
             </span>
           </div>
         </div>
       </header>
 
-      {/* Контент */}
-      <div className="mx-auto max-w-[1700px] space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+      {/* Разделы слева, содержимое справа. Сайдбар одинаков на всех вкладках:
+          навигация не должна прыгать от того, что открыто. */}
+      <div className="mx-auto flex max-w-[1700px] gap-6 px-4 py-6 sm:px-6 sm:py-8">
+        <nav className="sticky top-[73px] hidden h-fit w-52 shrink-0 flex-col gap-1 lg:flex">
+          {(
+            [
+              { id: "search" as Tab, label: "Поиск", icon: Map, count: 0 },
+              { id: "history" as Tab, label: "История", icon: Clock, count: 0 },
+              { id: "work" as Tab, label: "В работе", icon: Star, count: workCount },
+              { id: "demos" as Tab, label: "Демо", icon: Bot, count: demoCount },
+            ]
+          ).map(({ id, label, icon: Icon, count }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={cn(
+                "inline-flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                tab === id
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {label}
+              {count > 0 && (
+                <span
+                  className={cn(
+                    "ml-auto rounded-full px-1.5 text-[10px]",
+                    tab === id ? "bg-background/30" : "bg-secondary",
+                  )}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* На узком экране сайдбара нет — вкладки лентой сверху */}
+        <div className="min-w-0 flex-1 space-y-6">
+          <div className="flex gap-1 overflow-x-auto rounded-lg border border-border p-1 lg:hidden">
+            {(
+              [
+                { id: "search" as Tab, label: "Поиск", icon: Map },
+                { id: "history" as Tab, label: "История", icon: Clock },
+                { id: "work" as Tab, label: "В работе", icon: Star },
+                { id: "demos" as Tab, label: "Демо", icon: Bot },
+              ]
+            ).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors",
+                  tab === id
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
         {tab === "history" && (
           <div className="space-y-4">
             <div className="flex flex-col items-start gap-2">
@@ -292,6 +321,7 @@ export default function Home() {
             локальный проект
           </span>
         </footer>
+        </div>
       </div>
 
       {/* Toast */}

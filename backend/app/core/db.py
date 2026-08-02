@@ -132,6 +132,10 @@ class WorkItemRow(Base):
     # --- Что человек написал сам. Парсинг это НЕ трогает ---
     status: Mapped[str] = mapped_column(String, default="new")
     note: Mapped[Optional[str]] = mapped_column(Text)
+    # Что мы сделали клиенту: демо-сайт, ссылка на ассистента, макет. Живёт
+    # отдельно от website — там сайт самого клиента, а тут наша работа, и
+    # потерять её из-за того, что Яндекс отдал другой сайт, нельзя.
+    demo_url: Mapped[Optional[str]] = mapped_column(Text)
     remind_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

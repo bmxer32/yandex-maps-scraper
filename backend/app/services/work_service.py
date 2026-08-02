@@ -54,6 +54,7 @@ def _row_to_model(row: WorkItemRow) -> WorkItem:
         web=row.web,
         status=row.status or "new",
         note=row.note,
+        demo_url=row.demo_url,
         remind_at=row.remind_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -139,6 +140,7 @@ async def update(
     *,
     status: Optional[str] = None,
     note: Optional[str] = None,
+    demo_url: Optional[str] = None,
     remind_at: Optional[datetime] = None,
     clear_remind: bool = False,
 ) -> Optional[WorkItem]:
@@ -154,6 +156,8 @@ async def update(
                 row.status = status
         if note is not None:
             row.note = note.strip() or None
+        if demo_url is not None:
+            row.demo_url = demo_url.strip() or None
         if clear_remind:
             row.remind_at = None
         elif remind_at is not None:

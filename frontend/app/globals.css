@@ -72,6 +72,12 @@
   * {
     @apply border-border;
   }
+  /* Место под полосу прокрутки держим всегда. Без этого на короткой вкладке
+     полоса пропадает, и центрованный контент прыгает вбок на её ширину —
+     ровно тот сдвиг, который видно при переключении разделов. */
+  html {
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";

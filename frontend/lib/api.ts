@@ -248,6 +248,7 @@ export async function updateWork(
   patch: {
     status?: WorkStatus;
     note?: string;
+    demo_url?: string;
     remind_at?: string | null;
     clear_remind?: boolean;
   },

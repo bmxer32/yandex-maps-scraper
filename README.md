@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows-blue?logo=windows&logoColor=white)](https://github.com/bmxer32/yandex-maps-scraper/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-orange.svg)](https://github.com/bmxer32/yandex-maps-scraper/releases)
+[![Version](https://img.shields.io/badge/version-0.3.1-orange.svg)](https://github.com/bmxer32/yandex-maps-scraper/releases)
 
 </div>
 
@@ -37,7 +37,7 @@
 
 ### Готовый установщик (для пользователей)
 
-1. Скачайте `YandexMapsScraper-Setup-0.3.0.exe` из [Releases](https://github.com/bmxer32/yandex-maps-scraper/releases)
+1. Скачайте `YandexMapsScraper-Setup-0.3.1.exe` из [Releases](https://github.com/bmxer32/yandex-maps-scraper/releases)
 2. Запустите установщик — выберите папку установки
 3. Запустите «Yandex Maps Scraper» с рабочего стола или из меню Пуск
 4. Введите сферу бизнеса, выберите город — нажмите «Собрать данные»
@@ -168,6 +168,8 @@ pyinstaller yascraper.spec
 Запись — **копия карточки**, а не ссылка на выгрузку. История держит последние 50 прогонов; когда ниша вытеснится, контора, которой пишешь третью неделю, не должна исчезнуть вместе с ней.
 
 В строке: все телефоны и сайты, обе оси отбора (видно, зачем взяли), статус демо со счётчиком вопросов, статус работы, заметка и дата «напомнить».
+
+Отдельное поле — **наша ссылка**: демо-сайт, макет или ссылка на ассистента. Хранится отдельно от сайта клиента: там его сайт, тут наша работа, и потерять её из-за того, что Яндекс отдал другой адрес, нельзя. Рядом кнопки «скопировать» и «открыть». Если демо ассистента уже заведено, а поле пустое — кнопка **«привязать демо»** подставит ссылку одним нажатием.
 
 | Статус | Когда ставить |
 |---|---|
@@ -319,7 +321,7 @@ Pytest в проекте не используется — проверки ле
 
 ```bash
 python checks/prospects_check.py   # отбор клиентов: 111 проверок
-python checks/work_check.py        # раздел «В работе»: 21 проверка
+python checks/work_check.py        # раздел «В работе»: 24 проверки
 python checks/demos_check.py       # интеграция с kb_assistant: 22 проверки
 ```
 

@@ -20,7 +20,13 @@ export interface UseWork {
   remove: (key: string) => Promise<void>;
   patch: (
     key: string,
-    patch: { status?: WorkStatus; note?: string; remind_at?: string | null; clear_remind?: boolean },
+    patch: {
+      status?: WorkStatus;
+      note?: string;
+      demo_url?: string;
+      remind_at?: string | null;
+      clear_remind?: boolean;
+    },
   ) => Promise<void>;
   reload: () => Promise<void>;
 }

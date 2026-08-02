@@ -50,6 +50,8 @@ class WorkItem(BaseModel):
 
     status: str = "new"
     note: Optional[str] = None
+    # Ссылка на нашу работу: демо-сайт, макет, ссылка на ассистента.
+    demo_url: Optional[str] = None
     remind_at: Optional[datetime] = None
 
     created_at: Optional[datetime] = None
@@ -69,6 +71,8 @@ class WorkUpdateRequest(BaseModel):
 
     status: Optional[str] = None
     note: Optional[str] = None
+    # Пустая строка стирает ссылку, None — не трогать.
+    demo_url: Optional[str] = None
     # Пустая строка — снять напоминание; None — не трогать.
     remind_at: Optional[datetime] = None
     clear_remind: bool = False

@@ -228,6 +228,8 @@ export interface WorkItem {
   web: VerdictState | null;
   status: WorkStatus;
   note: string | null;
+  /** Ссылка на нашу работу: демо-сайт, макет, ссылка на ассистента. */
+  demo_url: string | null;
   remind_at: string | null;
   created_at: string | null;
   updated_at: string | null;

@@ -37,6 +37,7 @@ async def update_work(key: str, req: WorkUpdateRequest) -> WorkItem:
         key,
         status=req.status,
         note=req.note,
+        demo_url=req.demo_url,
         remind_at=req.remind_at,
         clear_remind=req.clear_remind,
     )
