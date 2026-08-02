@@ -26,6 +26,7 @@ import type { DemoStatus, Organization, ProspectVerdict } from "@/lib/types";
 import { DEMO_STATE_LABELS, VERDICT_LABELS, WEB_LABELS, isDemoPending } from "@/lib/types";
 import { exportUrl } from "@/lib/api";
 import type { UseDemos } from "@/lib/useDemos";
+import type { UseWork } from "@/lib/useWork";
 import { useProspects } from "@/lib/useProspects";
 import {
   cn,
@@ -36,6 +37,7 @@ import {
   isUsefulSocial,
   rowKey,
   shortenUrl,
+  workKey,
   siteKey,
   yandexMapsUrl,
 } from "@/lib/utils";
@@ -51,11 +53,14 @@ export function ResultsTable({
   organizations,
   taskId,
   demos,
+  work,
 }: {
   organizations: Organization[];
   taskId: string;
   /** Состояние демо поднято на страницу — оно общее с разделом «Демо». */
   demos: UseDemos;
+  /** То же и для работы: звёздочка тут и список «В работе» — одни данные. */
+  work: UseWork;
 }) {
   const [query, setQuery] = useState("");
   const [siteFilter, setSiteFilter] = useState<SiteFilter>("all");
@@ -167,6 +172,17 @@ export function ResultsTable({
       }
       return new Set([...prev, ...selectableKeys]);
     });
+  }
+
+  /** Звёздочка: в работу и обратно. Оценка едет вместе — видно, зачем взяли. */
+  function toggleWork(org: Organization) {
+    const key = workKey(org);
+    if (work.items[key]) {
+      work.remove(key);
+      return;
+    }
+    const v = prospects.verdicts[rowKey(org)];
+    work.add([{ ...org, verdict: v?.verdict, web: v?.web }]);
   }
 
   async function makeDemos() {
@@ -459,6 +475,8 @@ export function ResultsTable({
                     onDeleteDemo={demos.remove}
                     verdict={prospects.verdicts[rowKey(org)]}
                     showVerdict={scanStats.rated > 0}
+                    inWork={!!work.items[workKey(org)]}
+                    onToggleWork={() => toggleWork(org)}
                   />
                 );
               })}
@@ -645,6 +663,8 @@ function OrgRow({
   onDeleteDemo,
   verdict,
   showVerdict,
+  inWork,
+  onToggleWork,
 }: {
   org: Organization;
   demoEnabled: boolean;
@@ -655,6 +675,8 @@ function OrgRow({
   onDeleteDemo: (slug: string) => Promise<void>;
   verdict?: ProspectVerdict;
   showVerdict: boolean;
+  inWork: boolean;
+  onToggleWork: () => void;
 }) {
   // Старые выгрузки знают только один сайт и один телефон — падаем на них.
   const sites = org.websites?.length ? org.websites : org.website ? [org.website] : [];
@@ -685,6 +707,20 @@ function OrgRow({
       {/* Название */}
       <td className="px-3 py-3 align-top">
         <div className="flex items-start gap-1.5">
+          {/* Взять в работу. Запись переживает вытеснение выгрузки из истории. */}
+          <button
+            onClick={onToggleWork}
+            title={inWork ? "Убрать из работы" : "Взять в работу"}
+            aria-label={inWork ? `Убрать ${org.name} из работы` : `Взять ${org.name} в работу`}
+            className={cn(
+              "mt-0.5 shrink-0 transition-colors",
+              inWork
+                ? "text-warning hover:text-warning/70"
+                : "text-muted-foreground/40 hover:text-warning",
+            )}
+          >
+            <Star className={cn("h-3.5 w-3.5", inWork && "fill-current")} />
+          </button>
           <span className="font-medium leading-tight">{org.name}</span>
           {mapsUrl && (
             <a

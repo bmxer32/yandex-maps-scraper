@@ -84,8 +84,19 @@ class TaskManager:
             result = self.get_result(task_id)
             if result is not None:
                 from .history_service import save_run
+                from .work_service import refresh as refresh_work
 
                 await save_run(result)
+                # Раз уж Яндекс отдал свежие телефоны и сайты — пусть у контор
+                # в работе будут они. Статус и заметку это не трогает.
+                try:
+                    touched = await refresh_work(
+                        [o.model_dump() for o in result.organizations]
+                    )
+                    if touched:
+                        logger.info("Обновлено контор в работе: {}", touched)
+                except Exception:
+                    logger.exception("Не удалось обновить конторы в работе")
 
     async def cancel(self, task_id: str) -> bool:
         state = self._get(task_id)

@@ -66,6 +66,23 @@ export function rowKey(org: {
 }
 
 /**
+ * Ключ конторы в разделе «В работе». Зеркалит `work_key` из бэкенда:
+ * обе стороны должны считать одинаково, иначе звёздочка в таблице не сойдётся
+ * с записью в разделе.
+ *
+ * permalink Яндекса стабилен и есть даже там, где нет ни сайта, ни телефона.
+ */
+export function workKey(org: {
+  permalink?: string | null;
+  name: string;
+  address?: string | null;
+}): string {
+  const permalink = (org.permalink ?? "").trim();
+  if (permalink) return permalink;
+  return `${(org.name ?? "").trim().toLowerCase()}|${(org.address ?? "").trim().toLowerCase()}`;
+}
+
+/**
  * Ссылка на карточку организации в Яндекс.Картах.
  *
  * Парсер кладёт в `permalink` числовой id организации — по нему Яндекс сам
