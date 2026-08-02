@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Map, Bot, Clock, Database, Github, Zap } from "lucide-react";
+import { Map, Bot, Clock, Database, Github, Star, Zap } from "lucide-react";
 import type { GeoNode, SearchRequest, TaskProgress, TaskResult } from "@/lib/types";
 import {
   cancelTask,
@@ -12,15 +12,17 @@ import {
 } from "@/lib/api";
 import { isFinalStage } from "@/lib/types";
 import { useDemos } from "@/lib/useDemos";
+import { useWork } from "@/lib/useWork";
 import { cn } from "@/lib/utils";
 import { SearchForm } from "@/components/SearchForm";
 import { ProgressView } from "@/components/ProgressView";
 import { ResultsTable } from "@/components/ResultsTable";
 import { DemosPanel } from "@/components/DemosPanel";
 import { HistoryPanel } from "@/components/HistoryPanel";
+import { WorkPanel } from "@/components/WorkPanel";
 import { Skeleton, Toast } from "@/components/ui";
 
-type Tab = "search" | "history" | "demos";
+type Tab = "search" | "history" | "work" | "demos";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("search");
@@ -28,6 +30,8 @@ export default function Home() {
   // «Демо» должны видеть одни и те же данные, иначе удаление в одном месте
   // не отражается в другом.
   const demos = useDemos();
+  // Так же и работа: звёздочка в таблице и раздел «В работе» — одни данные.
+  const work = useWork();
   const [geoTree, setGeoTree] = useState<GeoNode[]>([]);
   const [geoLoading, setGeoLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -38,6 +42,7 @@ export default function Home() {
 
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const demoCount = Object.keys(demos.demos).length;
+  const workCount = Object.keys(work.items).length;
 
   // Загрузка гео-дерева один раз
   useEffect(() => {
@@ -129,6 +134,7 @@ export default function Home() {
               {([
                 { id: "search" as Tab, label: "Поиск", icon: Map },
                 { id: "history" as Tab, label: "История", icon: Clock },
+                { id: "work" as Tab, label: "В работе", icon: Star },
                 { id: "demos" as Tab, label: "Демо", icon: Bot },
               ]).map(({ id, label, icon: Icon }) => (
                 <button
@@ -143,6 +149,11 @@ export default function Home() {
                 >
                   <Icon className="h-3.5 w-3.5" />
                   {label}
+                  {id === "work" && workCount > 0 && (
+                    <span className="ml-0.5 rounded-full bg-background/30 px-1.5 text-[10px]">
+                      {workCount}
+                    </span>
+                  )}
                   {id === "demos" && demoCount > 0 && (
                     <span className="ml-0.5 rounded-full bg-background/30 px-1.5 text-[10px]">
                       {demoCount}
@@ -163,7 +174,7 @@ export default function Home() {
             </a>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/30 px-2.5 py-1 text-[11px] text-muted-foreground">
               <Zap className="h-3 w-3 text-primary" />
-              v0.2
+              v0.3
             </span>
           </div>
         </div>
@@ -187,6 +198,20 @@ export default function Home() {
                 setTab("search");
               }}
             />
+          </div>
+        )}
+
+        {tab === "work" && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-start gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">В работе</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Конторы, за которые взялись. Данные лежат копией и не пропадут,
+                когда выгрузка вытеснится из истории; новый парсинг обновит
+                телефоны и оценку, а статус с заметкой останутся вашими.
+              </p>
+            </div>
+            <WorkPanel work={work} demos={demos.demos} />
           </div>
         )}
 
@@ -249,6 +274,7 @@ export default function Home() {
               </span>
             </div>
             <ResultsTable
+              work={work}
               organizations={result.organizations}
               taskId={result.task_id}
               demos={demos}

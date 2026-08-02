@@ -178,6 +178,62 @@ export const WEB_LABELS: Record<VerdictState, string> = {
 export type Axis = "ai" | "web";
 
 /* ------------------------------------------------------------------ */
+/* Раздел «В работе»                                                    */
+/* ------------------------------------------------------------------ */
+
+export type WorkStatus = "new" | "written" | "replied" | "client" | "refused";
+
+/** Порядок тот же, что в фильтре над списком: слева направо по ходу работы. */
+export const WORK_STATUSES: WorkStatus[] = [
+  "new",
+  "written",
+  "replied",
+  "client",
+  "refused",
+];
+
+export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
+  new: "Новый",
+  written: "Написал",
+  replied: "Ответили",
+  client: "Клиент",
+  refused: "Отказ",
+};
+
+/**
+ * Контора, с которой работаем.
+ *
+ * Карточка лежит копией, а не ссылкой на выгрузку: история держит последние
+ * 50 прогонов, и вытеснение ниши не должно уносить контору, которой пишешь
+ * третью неделю. Парсинг обновляет контакты и оценку, но `status`, `note` и
+ * `remind_at` — только руками.
+ */
+export interface WorkItem {
+  key: string;
+  permalink: string | null;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  phones: string[];
+  website: string | null;
+  websites: string[];
+  email: string | null;
+  socials: string[];
+  categories: string[];
+  rating: number | null;
+  reviews_count: number | null;
+  lat: number | null;
+  lon: number | null;
+  verdict: VerdictState | null;
+  web: VerdictState | null;
+  status: WorkStatus;
+  note: string | null;
+  remind_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/* ------------------------------------------------------------------ */
 /* Персональные демо ИИ-ассистента (интеграция с kb_assistant)          */
 /* ------------------------------------------------------------------ */
 

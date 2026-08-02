@@ -95,6 +95,51 @@ class SearchHistoryRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class WorkItemRow(Base):
+    """Контора, с которой работаем: раздел «В работе».
+
+    Данные организации лежат здесь **копией**, а не ссылкой на выгрузку.
+    История держит последние 50 прогонов; когда ниша вытеснится, ссылка на
+    строку умрёт, а контора, которой ты пишешь третью неделю, — нет.
+
+    Ключ — permalink Яндекса: у половины салонов сайта нет вовсе, а карточка
+    есть всегда. Без permalink падаем на название с адресом.
+    """
+    __tablename__ = "work_items"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    permalink: Mapped[Optional[str]] = mapped_column(String, index=True)
+
+    # --- Копия карточки. Обновляется при новом парсинге той же ниши ---
+    name: Mapped[str] = mapped_column(String, index=True)
+    address: Mapped[Optional[str]] = mapped_column(Text)
+    phone: Mapped[Optional[str]] = mapped_column(String)
+    phones: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    website: Mapped[Optional[str]] = mapped_column(Text)
+    websites: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    email: Mapped[Optional[str]] = mapped_column(Text)
+    socials: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    categories: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    rating: Mapped[Optional[float]] = mapped_column(Float)
+    reviews_count: Mapped[Optional[int]] = mapped_column(Integer)
+    lat: Mapped[Optional[float]] = mapped_column(Float)
+    lon: Mapped[Optional[float]] = mapped_column(Float)
+    # Обе оси отбора на последний известный момент — чтобы в разделе было
+    # видно, зачем контору вообще взяли.
+    verdict: Mapped[Optional[str]] = mapped_column(String)     # good|maybe|skip
+    web: Mapped[Optional[str]] = mapped_column(String)         # good|maybe|skip
+
+    # --- Что человек написал сам. Парсинг это НЕ трогает ---
+    status: Mapped[str] = mapped_column(String, default="new")
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    remind_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 # ---------------------------------------------------------------------------
 # Engine / session
 # ---------------------------------------------------------------------------

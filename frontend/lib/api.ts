@@ -4,6 +4,7 @@
  */
 import type {
   DemoConfig,
+  Organization,
   DemoStatus,
   GeoNode,
   HistoryRun,
@@ -12,6 +13,9 @@ import type {
   SearchRequest,
   TaskProgress,
   TaskResult,
+  VerdictState,
+  WorkItem,
+  WorkStatus,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -211,4 +215,54 @@ export function subscribeProgress(
   };
 
   return () => es.close();
+}
+
+/* ------------------------------------------------------------------ */
+/* Раздел «В работе»                                                    */
+/* ------------------------------------------------------------------ */
+
+export async function listWork(): Promise<WorkItem[]> {
+  const resp = await fetch(`${API_URL}/api/work/list`, { cache: "no-store" });
+  return handle<WorkItem[]>(resp);
+}
+
+/**
+ * Добавить конторы в работу.
+ *
+ * Организации уходят целиком: раздел не должен зависеть от того, сохранилась
+ * ли выгрузка, из которой контору взяли.
+ */
+export async function addWork(
+  items: (Organization & { verdict?: VerdictState; web?: VerdictState })[],
+): Promise<WorkItem[]> {
+  const resp = await fetch(`${API_URL}/api/work/add`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  return handle<WorkItem[]>(resp);
+}
+
+export async function updateWork(
+  key: string,
+  patch: {
+    status?: WorkStatus;
+    note?: string;
+    remind_at?: string | null;
+    clear_remind?: boolean;
+  },
+): Promise<WorkItem> {
+  const resp = await fetch(`${API_URL}/api/work/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return handle<WorkItem>(resp);
+}
+
+export async function removeWork(key: string): Promise<void> {
+  const resp = await fetch(`${API_URL}/api/work/${encodeURIComponent(key)}`, {
+    method: "DELETE",
+  });
+  await handle<{ removed: string }>(resp);
 }
