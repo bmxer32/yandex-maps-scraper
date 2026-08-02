@@ -4,8 +4,11 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   Bot,
+  Check,
+  Copy,
   ExternalLink,
   Globe,
+  Link2,
   MapPin,
   Phone,
   Star,
@@ -84,6 +87,8 @@ export function WorkPanel({
 }) {
   const [filter, setFilter] = useState<WorkStatus | "all" | "overdue">("all");
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
+  const [linkDraft, setLinkDraft] = useState<Record<string, string>>({});
+  const [copied, setCopied] = useState<string | null>(null);
 
   const all = useMemo(
     () =>
@@ -183,6 +188,7 @@ export function WorkPanel({
           const phones = it.phones.length ? it.phones : it.phone ? [it.phone] : [];
           const sites = it.websites.length ? it.websites : it.website ? [it.website] : [];
           const draft = noteDraft[it.key];
+          const linkDraft_ = linkDraft[it.key];
 
           return (
             <div
@@ -332,6 +338,68 @@ export function WorkPanel({
                 </div>
               </div>
 
+              {/* Что мы сделали клиенту: демо-сайт, макет, ссылка на ассистента.
+                  Отдельно от сайта клиента — там его сайт, тут наша работа. */}
+              <div className="mt-3 flex items-center gap-2">
+                <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <Input
+                  value={linkDraft_ ?? it.demo_url ?? ""}
+                  placeholder="Наше демо или сайт для клиента — вставьте ссылку"
+                  onChange={(e) => setLinkDraft((p) => ({ ...p, [it.key]: e.target.value }))}
+                  onBlur={() => {
+                    if (linkDraft_ === undefined || linkDraft_ === (it.demo_url ?? "")) return;
+                    work.patch(it.key, { demo_url: linkDraft_ });
+                    setLinkDraft((p) => {
+                      const next = { ...p };
+                      delete next[it.key];
+                      return next;
+                    });
+                  }}
+                  className="h-8 text-xs"
+                />
+                {it.demo_url && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Скопировать ссылку"
+                      onClick={() => {
+                        navigator.clipboard.writeText(it.demo_url!);
+                        setCopied(it.key);
+                        setTimeout(() => setCopied(null), 1500);
+                      }}
+                    >
+                      {copied === it.key ? (
+                        <Check className="h-3.5 w-3.5 text-success" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <a
+                      href={normalizeUrl(it.demo_url) ?? "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Открыть"
+                      className="shrink-0 text-muted-foreground hover:text-primary"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </>
+                )}
+                {/* Демо ассистента уже заведено, а поле пустое — подставим одним нажатием */}
+                {!it.demo_url && demo?.link && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0 whitespace-nowrap"
+                    onClick={() => work.patch(it.key, { demo_url: demo.link! })}
+                  >
+                    <Bot className="h-3.5 w-3.5" />
+                    привязать демо
+                  </Button>
+                )}
+              </div>
+
               {/* Заметка — сохраняется при уходе фокуса, чтобы не дёргать API на каждую букву */}
               <Input
                 value={draft ?? it.note ?? ""}
@@ -346,7 +414,7 @@ export function WorkPanel({
                     return next;
                   });
                 }}
-                className="mt-3 h-8 text-xs"
+                className="mt-2 h-8 text-xs"
               />
             </div>
           );

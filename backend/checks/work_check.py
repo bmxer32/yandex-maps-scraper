@@ -81,6 +81,15 @@ async def test_add_and_update() -> None:
 
     check(await work_service.update("нет-такой") is None, "неизвестный ключ — None")
 
+    # Ссылка на нашу работу: демо-сайт, макет, ссылка на ассистента.
+    upd = await work_service.update("111", demo_url="https://demo.nashe.ru/estetika")
+    check(upd.demo_url == "https://demo.nashe.ru/estetika", "ссылка на демо сохраняется")
+    check(upd.website == "https://estetika.ru",
+          "сайт клиента и наша ссылка живут отдельно")
+    check((await work_service.update("111", demo_url="  ")).demo_url is None,
+          "пустая строка стирает ссылку")
+    await work_service.update("111", demo_url="https://demo.nashe.ru/estetika")
+
 
 async def test_rescan_keeps_work() -> None:
     print("\nповторный парсинг:")
@@ -104,6 +113,7 @@ async def test_rescan_keeps_work() -> None:
     check(item.reviews_count == 58, "отзывы обновились")
     check(item.status == "written", "СТАТУС НЕ ТРОНУТ")
     check(item.note == "обещали ответить", "ЗАМЕТКА НЕ ТРОНУТА")
+    check(item.demo_url == "https://demo.nashe.ru/estetika", "НАША ССЫЛКА НЕ ТРОНУТА")
 
     # Контору, которой в работе нет, refresh не заводит: раздел наполняется
     # только руками, иначе туда свалится вся выгрузка.
