@@ -144,6 +144,82 @@ export function isUsefulSocial(url: string): boolean {
   }
 }
 
+/**
+ * Телеграм-контакты компаний **без своего сайта** — списком для рассылки.
+ *
+ * «Без сайта» здесь то же, что и в отборе: сайта нет вовсе **или** в его поле
+ * лежит ВКонтакте, виджет записи, конструктор. На живой выгрузке салонов
+ * своего сайта нет у 16 компаний из 35, а совсем пустое поле — только у двух;
+ * считать по одному лишь пустому полю значит потерять почти весь сегмент.
+ * Тип ссылки берём из оценки, а пока её не считали — по наличию адреса.
+ *
+ * В файл идут и юзернеймы, и телефоны: у половины таких компаний в телеграме
+ * указан именно номер (`t.me/+79991234567`), и рассыльщики принимают оба вида.
+ * Приглашения в закрытые чаты (`joinchat`, `t.me/+AbCdEf`) пропускаем — писать
+ * по ним некому.
+ */
+export function telegramUsernames(
+  orgs: {
+    website?: string | null;
+    websites?: string[] | null;
+    socials?: string[] | null;
+    /** own | social | booking | builder | none — из вердикта, если он есть. */
+    linkKind?: string | null;
+  }[],
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const org of orgs) {
+    const hasOwnSite = org.linkKind
+      ? org.linkKind === "own"
+      : (org.websites?.length ?? 0) > 0 || !!org.website;
+    if (hasOwnSite) continue;
+
+    for (const raw of org.socials ?? []) {
+      const { url } = parseSocial(raw);
+      if (!isUsefulSocial(url)) continue;
+      let host: string;
+      let first: string;
+      try {
+        const u = new URL(url);
+        host = u.hostname.replace(/^www\./, "").toLowerCase();
+        first = u.pathname.replace(/^\/|\/$/g, "").split("/")[0];
+      } catch {
+        continue;
+      }
+      if (host !== "t.me" && host !== "telegram.me") continue;
+
+      let contact: string | null = null;
+      if (/^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(first)) {
+        contact = `@${first}`;
+      } else {
+        // Телефон: со знаком «+» или без него, но только цифры.
+        const digits = first.replace(/^\+/, "");
+        if (/^\d{10,15}$/.test(digits)) contact = `+${digits}`;
+      }
+      if (!contact) continue;
+
+      const key = contact.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(contact);
+    }
+  }
+
+  return out;
+}
+
+/** Скачать текст файлом — без обращения к бэкенду. */
+export function downloadText(filename: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Число с разделителем тысяч. */
 export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
