@@ -37,6 +37,8 @@ import {
   isUsefulSocial,
   rowKey,
   shortenUrl,
+  telegramUsernames,
+  downloadText,
   workKey,
   siteKey,
   yandexMapsUrl,
@@ -185,6 +187,14 @@ export function ResultsTable({
     work.add([{ ...org, verdict: v?.verdict, web: v?.web }]);
   }
 
+  /** Телеграм-контакты видимых строк без своего сайта — по одному в строке. */
+  const tgUsernames = useMemo(() => telegramUsernames(filtered), [filtered]);
+
+  function saveTelegram() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadText(`telegram-bez-sayta-${stamp}.txt`, tgUsernames.join("\n") + "\n");
+  }
+
   async function makeDemos() {
     await demos.create(selectedOrgs);
     setSelected(new Set());
@@ -328,6 +338,14 @@ export function ResultsTable({
             <Download className="h-3.5 w-3.5" />
             Excel (только сайты)
           </a>
+          {/* Кому писать в телеграм: у кого сайта нет вовсе. Считается по
+              видимым строкам — фильтры и оценка учитываются. */}
+          {tgUsernames.length > 0 && (
+            <Button variant="outline" size="sm" onClick={saveTelegram}>
+              <MessageCircle className="h-3.5 w-3.5" />
+              ТГ без сайта ({tgUsernames.length})
+            </Button>
+          )}
         </div>
       </div>
 

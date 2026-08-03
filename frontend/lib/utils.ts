@@ -144,6 +144,112 @@ export function isUsefulSocial(url: string): boolean {
   }
 }
 
+/**
+ * Что в поле «сайт» сайтом не является — **только для сбора телеграм-контактов**.
+ *
+ * Сознательно отдельный список, а не общая классификация из отбора: там свои
+ * оси и свой кэш вердиктов, и менять их ради выгрузки контактов нельзя.
+ * Здесь вопрос ровно один — писать ли этой компании в телеграм как той, у кого
+ * сайта нет.
+ */
+const _NOT_A_SITE = [
+  // Мессенджеры и сокращатели: это способ написать, а не сайт.
+  /(^|\.)viber\.(click|com)$/i,
+  /(^|\.)vk\.(link|cc)$/i,
+  /(^|\.)msng\.link$/i,
+  /(^|\.)(vk\.(ru|com)|vkontakte\.ru|max\.ru|ok\.ru)$/i,
+  /(^|\.)(t\.me|telegram\.me|wa\.me|api\.whatsapp\.com)$/i,
+  /(^|\.)(instagram\.com|facebook\.com|youtube\.com|tiktok\.com)$/i,
+  // Страницы онлайн-записи.
+  /(^|\.)(yclients\.com|clients\.site|dikidi\.(net|ru|app)|easyweek\.\w+|sonline\.su)/i,
+  /(^|\.)n\d{5,}\.\w+/i,
+  // Конструкторы и «ссылка в шапке профиля».
+  /(^|\.)(tilda\.ws|wixsite\.com|business\.site|taplink\.\w+|nethouse\.ru)$/i,
+  /(^|\.)(umi\.ru|a5\.ru|ucoz\.\w+|jimdosite\.com|linktr\.ee)$/i,
+];
+
+/** Свой ли это сайт — в смысле сбора телеграм-контактов. */
+function isRealSite(url: string | null | undefined): boolean {
+  const host = siteKey(url).split("/")[0];
+  if (!host) return false;
+  return !_NOT_A_SITE.some((re) => re.test(host));
+}
+
+/**
+ * Телеграм-контакты компаний **без своего сайта** — списком для рассылки.
+ *
+ * «Без сайта» значит, что писать в телеграм такой компании осмысленно: поля
+ * нет вовсе, либо в нём ВКонтакте, виджет записи, конструктор или ссылка в
+ * мессенджер. На живой выгрузке салонов своего сайта нет у 16 компаний из 35,
+ * а совсем пустое поле — только у двух; считать по одному лишь пустому полю
+ * значит потерять почти весь сегмент.
+ *
+ * Список «не сайт» здесь свой и на отбор клиентов не влияет — считаем одинаково
+ * и до оценки, и после неё.
+ *
+ * В файл идут и юзернеймы, и телефоны: у половины таких компаний в телеграме
+ * указан именно номер (`t.me/+79991234567`), и рассыльщики принимают оба вида.
+ * Приглашения в закрытые чаты (`joinchat`, `t.me/+AbCdEf`) пропускаем — писать
+ * по ним некому.
+ */
+export function telegramUsernames(
+  orgs: {
+    website?: string | null;
+    websites?: string[] | null;
+    socials?: string[] | null;
+  }[],
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const org of orgs) {
+    const links = org.websites?.length ? org.websites : org.website ? [org.website] : [];
+    if (links.some(isRealSite)) continue;
+
+    for (const raw of org.socials ?? []) {
+      const { url } = parseSocial(raw);
+      if (!isUsefulSocial(url)) continue;
+      let host: string;
+      let first: string;
+      try {
+        const u = new URL(url);
+        host = u.hostname.replace(/^www\./, "").toLowerCase();
+        first = u.pathname.replace(/^\/|\/$/g, "").split("/")[0];
+      } catch {
+        continue;
+      }
+      if (host !== "t.me" && host !== "telegram.me") continue;
+
+      let contact: string | null = null;
+      if (/^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(first)) {
+        contact = `@${first}`;
+      } else {
+        // Телефон: со знаком «+» или без него, но только цифры.
+        const digits = first.replace(/^\+/, "");
+        if (/^\d{10,15}$/.test(digits)) contact = `+${digits}`;
+      }
+      if (!contact) continue;
+
+      const key = contact.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(contact);
+    }
+  }
+
+  return out;
+}
+
+/** Скачать текст файлом — без обращения к бэкенду. */
+export function downloadText(filename: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Число с разделителем тысяч. */
 export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
