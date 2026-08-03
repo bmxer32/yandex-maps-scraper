@@ -187,18 +187,8 @@ export function ResultsTable({
     work.add([{ ...org, verdict: v?.verdict, web: v?.web }]);
   }
 
-  /**
-   * Телеграм-контакты видимых строк без своего сайта — по одному в строке.
-   * Тип ссылки берём из вердикта: без него компания с ВК в поле «сайт»
-   * считалась бы сайтовладельцем и в список бы не попала.
-   */
-  const tgUsernames = useMemo(
-    () =>
-      telegramUsernames(
-        filtered.map((o) => ({ ...o, linkKind: prospects.verdicts[rowKey(o)]?.link_kind })),
-      ),
-    [filtered, prospects.verdicts],
-  );
+  /** Телеграм-контакты видимых строк без своего сайта — по одному в строке. */
+  const tgUsernames = useMemo(() => telegramUsernames(filtered), [filtered]);
 
   function saveTelegram() {
     const stamp = new Date().toISOString().slice(0, 10);

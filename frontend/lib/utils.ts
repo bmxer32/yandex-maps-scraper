@@ -145,13 +145,47 @@ export function isUsefulSocial(url: string): boolean {
 }
 
 /**
+ * Что в поле «сайт» сайтом не является — **только для сбора телеграм-контактов**.
+ *
+ * Сознательно отдельный список, а не общая классификация из отбора: там свои
+ * оси и свой кэш вердиктов, и менять их ради выгрузки контактов нельзя.
+ * Здесь вопрос ровно один — писать ли этой компании в телеграм как той, у кого
+ * сайта нет.
+ */
+const _NOT_A_SITE = [
+  // Мессенджеры и сокращатели: это способ написать, а не сайт.
+  /(^|\.)viber\.(click|com)$/i,
+  /(^|\.)vk\.(link|cc)$/i,
+  /(^|\.)msng\.link$/i,
+  /(^|\.)(vk\.(ru|com)|vkontakte\.ru|max\.ru|ok\.ru)$/i,
+  /(^|\.)(t\.me|telegram\.me|wa\.me|api\.whatsapp\.com)$/i,
+  /(^|\.)(instagram\.com|facebook\.com|youtube\.com|tiktok\.com)$/i,
+  // Страницы онлайн-записи.
+  /(^|\.)(yclients\.com|clients\.site|dikidi\.(net|ru|app)|easyweek\.\w+|sonline\.su)/i,
+  /(^|\.)n\d{5,}\.\w+/i,
+  // Конструкторы и «ссылка в шапке профиля».
+  /(^|\.)(tilda\.ws|wixsite\.com|business\.site|taplink\.\w+|nethouse\.ru)$/i,
+  /(^|\.)(umi\.ru|a5\.ru|ucoz\.\w+|jimdosite\.com|linktr\.ee)$/i,
+];
+
+/** Свой ли это сайт — в смысле сбора телеграм-контактов. */
+function isRealSite(url: string | null | undefined): boolean {
+  const host = siteKey(url).split("/")[0];
+  if (!host) return false;
+  return !_NOT_A_SITE.some((re) => re.test(host));
+}
+
+/**
  * Телеграм-контакты компаний **без своего сайта** — списком для рассылки.
  *
- * «Без сайта» здесь то же, что и в отборе: сайта нет вовсе **или** в его поле
- * лежит ВКонтакте, виджет записи, конструктор. На живой выгрузке салонов
- * своего сайта нет у 16 компаний из 35, а совсем пустое поле — только у двух;
- * считать по одному лишь пустому полю значит потерять почти весь сегмент.
- * Тип ссылки берём из оценки, а пока её не считали — по наличию адреса.
+ * «Без сайта» значит, что писать в телеграм такой компании осмысленно: поля
+ * нет вовсе, либо в нём ВКонтакте, виджет записи, конструктор или ссылка в
+ * мессенджер. На живой выгрузке салонов своего сайта нет у 16 компаний из 35,
+ * а совсем пустое поле — только у двух; считать по одному лишь пустому полю
+ * значит потерять почти весь сегмент.
+ *
+ * Список «не сайт» здесь свой и на отбор клиентов не влияет — считаем одинаково
+ * и до оценки, и после неё.
  *
  * В файл идут и юзернеймы, и телефоны: у половины таких компаний в телеграме
  * указан именно номер (`t.me/+79991234567`), и рассыльщики принимают оба вида.
@@ -163,18 +197,14 @@ export function telegramUsernames(
     website?: string | null;
     websites?: string[] | null;
     socials?: string[] | null;
-    /** own | social | booking | builder | none — из вердикта, если он есть. */
-    linkKind?: string | null;
   }[],
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
 
   for (const org of orgs) {
-    const hasOwnSite = org.linkKind
-      ? org.linkKind === "own"
-      : (org.websites?.length ?? 0) > 0 || !!org.website;
-    if (hasOwnSite) continue;
+    const links = org.websites?.length ? org.websites : org.website ? [org.website] : [];
+    if (links.some(isRealSite)) continue;
 
     for (const raw of org.socials ?? []) {
       const { url } = parseSocial(raw);
